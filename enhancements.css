@@ -271,9 +271,27 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   margin-bottom: 14px;
 }
 
-#postChooser,
-#postEditor {
+#postChooser {
   margin-bottom: 14px;
+}
+
+#postEditor {
+  margin: 0;
+}
+
+body.post-modal-open {
+  overflow: hidden;
+}
+
+.post-editor-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(3px);
 }
 
 .chooser-row,
@@ -285,7 +303,28 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .post-editor-card {
-  border-color: #5a617d;
+  width: min(1080px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  border-color: #717790;
+  background: #212432;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(47, 222, 182, 0.12);
+}
+
+.modal-card-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #4c546f;
+}
+
+.modal-card-head h3 {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.modal-close {
+  width: 38px;
+  min-width: 38px;
 }
 
 .inherited-period {
@@ -631,6 +670,14 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 @media (max-width: 590px) {
+  .post-editor-modal {
+    padding: 8px;
+  }
+
+  .post-editor-card {
+    max-height: calc(100dvh - 16px);
+  }
+
   .seg.three {
     grid-template-columns: 1fr;
   }
@@ -674,4 +721,3 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
     grid-row: 1;
   }
 }
-
