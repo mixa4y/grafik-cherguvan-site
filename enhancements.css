@@ -289,9 +289,9 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 }
 
 .inherited-period {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
   margin-bottom: 14px;
   padding: 10px 12px;
   border: 1px solid #4c546f;
@@ -303,6 +303,18 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
 
 .inherited-period b {
   color: var(--accent);
+}
+
+.inherited-period .control {
+  background: var(--bg);
+}
+
+.schedule-inactive {
+  background: #212432 !important;
+  color: #717790;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .post-editor-grid {
@@ -627,6 +639,7 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   .post-entry-actions .btn,
   .chooser-row,
   .shift-add-row,
+  .inherited-period,
   .post-editor-grid,
   .draft-shift-row,
   .saved-post-row,
