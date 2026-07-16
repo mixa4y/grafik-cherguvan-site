@@ -6,6 +6,7 @@
   const KEY = "dutyWizardV4";
   const PREVIOUS_KEY = "dutyWizardV3";
   const LEGACY_KEY = "dutyWizardV2";
+  const AUTO_SAVE_KEY = "dutyWizardAutoSaveV1";
   const SHIFT_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 24];
   const MAX_SHIFTS = 24;
   const MAX_PEOPLE_PER_SHIFT = 30;
@@ -150,10 +151,22 @@
     return next;
   }
 
+  function loadAutoSavePreference() {
+    try {
+      return localStorage.getItem(AUTO_SAVE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  }
+
+  let autoSaveEnabled = loadAutoSavePreference();
+
   function load() {
     try {
-      const current = localStorage.getItem(KEY);
+      const storage = autoSaveEnabled ? localStorage : sessionStorage;
+      const current = storage.getItem(KEY);
       if (current) return migrate(JSON.parse(current));
+      if (!autoSaveEnabled) return clone(defaults);
       const previous = localStorage.getItem(PREVIOUS_KEY);
       if (previous) return migrate(JSON.parse(previous), true);
       const legacy = localStorage.getItem(LEGACY_KEY);
@@ -166,8 +179,51 @@
 
   let state = load();
 
+  function clearPersistentSchedule() {
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(PREVIOUS_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+  }
+
   function save() {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    try {
+      const serialized = JSON.stringify(state);
+      if (autoSaveEnabled) {
+        localStorage.setItem(KEY, serialized);
+        sessionStorage.removeItem(KEY);
+      } else {
+        sessionStorage.setItem(KEY, serialized);
+      }
+    } catch {
+      // The app still works when browser storage is unavailable.
+    }
+  }
+
+  function setAutoSave(enabled) {
+    autoSaveEnabled = Boolean(enabled);
+    try {
+      localStorage.setItem(AUTO_SAVE_KEY, autoSaveEnabled ? "on" : "off");
+      if (autoSaveEnabled) {
+        localStorage.setItem(KEY, JSON.stringify(state));
+        sessionStorage.removeItem(KEY);
+      } else {
+        sessionStorage.setItem(KEY, JSON.stringify(state));
+        clearPersistentSchedule();
+      }
+    } catch {
+      // Keep the selected runtime mode even if storage is blocked.
+    }
+  }
+
+  function renderAutoSave() {
+    const toggle = $("#autoSaveToggle");
+    const control = $("#autoSaveControl");
+    toggle.checked = autoSaveEnabled;
+    const status = autoSaveEnabled
+      ? "Увімкнено: дані відновляться наступного разу"
+      : "Вимкнено: дані зберігаються лише до закриття браузера";
+    control.title = status;
+    toggle.setAttribute("aria-label", status);
   }
 
   function today() {
@@ -1000,6 +1056,7 @@
 
   function render() {
     normalize();
+    renderAutoSave();
     renderProgress();
     render1();
     if (state.step === 2) render2();
@@ -2135,6 +2192,16 @@
 
   $("#confirmPeople").onclick = confirmAllShifts;
 
+  $("#autoSaveToggle").addEventListener("change", (event) => {
+    setAutoSave(event.target.checked);
+    renderAutoSave();
+    toast(
+      autoSaveEnabled
+        ? "Автозбереження увімкнено"
+        : "Дані зберігаються лише в поточній сесії",
+    );
+  });
+
   $("#nextBtn").onclick = () => {
     const error = validNext();
     if (error) {
@@ -2156,9 +2223,8 @@
   $("#printBtn").onclick = printSchedule;
   $("#resetBtn").onclick = () => {
     if (!confirm("Очистити дані майстра?")) return;
-    localStorage.removeItem(KEY);
-    localStorage.removeItem(PREVIOUS_KEY);
-    localStorage.removeItem(LEGACY_KEY);
+    clearPersistentSchedule();
+    sessionStorage.removeItem(KEY);
     state = clone(defaults);
     state.startDate = today();
     render();
