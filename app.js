@@ -261,8 +261,6 @@
       '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
     clock:
       '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
-    repeat:
-      '<path d="M21 12a9 9 0 0 0-15.1-6.6L3 8"/><path d="M3 3v5h5M3 12a9 9 0 0 0 15.1 6.6L21 16"/><path d="M16 16h5v5"/>',
   });
 
   function uiIcon(name) {
@@ -737,7 +735,7 @@
 
     const saved = state.points
       .map((point, pointIndex) => `<div class="saved-post-row">
-        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}</span>`).join("")}</span><span class="post-meta-item">${uiIcon("users")}<b>${point.peopleRequired} ${plural(point.peopleRequired, "людина", "людини", "людей")}</b></span><span class="post-meta-item">${uiIcon("clock")}<b>${point.duration} год</b></span><span class="post-meta-item">${uiIcon("repeat")}<b>${point.peopleMode === "full" ? "одночасно" : "по черзі"}</b></span></div></div>
+        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}</span>`).join("")}</span><span class="post-meta-item">${uiIcon("users")}<b>${point.peopleRequired} ${plural(point.peopleRequired, "людина", "людини", "людей")}</b></span><span class="post-meta-item">${uiIcon("clock")}<b>${point.duration} год</b></span></div></div>
         <div class="saved-post-buttons"><button class="btn" data-edit-post="${pointIndex}">Редагувати</button><button class="btn" data-duplicate-post="${pointIndex}">Дублювати</button><button class="icon" data-delete-post="${pointIndex}" title="Видалити пост" aria-label="Видалити пост">${uiIcon("trash")}</button></div>
       </div>`)
       .join("");
