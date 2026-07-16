@@ -811,6 +811,10 @@
 
   function render2() {
     const draft = state.postDraft;
+    document.body.classList.toggle(
+      "post-modal-open",
+      state.step === 2 && Boolean(draft),
+    );
     $("#postChooser").innerHTML = state.choosingPost
       ? `<div class="card post-chooser-card">
           <div class="card-head"><h3>Обрати існуючий пост</h3><span class="badge">${state.postLibrary.length} збережено</span></div>
@@ -832,8 +836,9 @@
           <button class="icon" data-remove-draft-shift="${shift}" title="Прибрати зміну з поста" aria-label="Прибрати зміну з поста">${uiIcon("x")}</button>
         </div>`)
         .join("");
-      $("#postEditor").innerHTML = `<div class="card post-editor-card">
-        <div class="card-head"><div><h3>${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Початкові значення взято з Кроку 1. Для цього поста їх можна змінити.</div></div></div>
+      $("#postEditor").innerHTML = `<div class="post-editor-modal" role="presentation">
+        <div class="card post-editor-card" role="dialog" aria-modal="true" aria-labelledby="postEditorTitle">
+        <div class="card-head modal-card-head"><div><h3 id="postEditorTitle">${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Початкові значення взято з Кроку 1. Для цього поста їх можна змінити.</div></div><button class="icon modal-close" id="closePostEditor" title="Закрити редактор" aria-label="Закрити редактор">${uiIcon("x")}</button></div>
         <div class="inherited-period"><div class="field" data-help="Дата автоматично підтягується з Кроку 1, але може бути змінена для цього поста."><label>Дата початку поста</label><input class="control draft-start-date" type="date" min="${esc(state.startDate)}" max="${dateInputValueAt(state.daysCount - 1)}" value="${esc(draft.startDate)}"></div><div class="field" data-help="Початок розрахункової доби цього поста. Від нього будуються проміжки чергування."><label>Початок доби поста</label><input class="control draft-day-start" type="time" value="${esc(draft.dayStart)}"></div></div>
         <div class="post-editor-grid">
           <div class="field" data-help="Обов’язкова зрозуміла назва, наприклад «КПП» або «Кухня»."><label>Назва поста *</label><input class="control draft-point-name" value="${esc(draft.name)}" placeholder="Введіть назву поста"></div>
@@ -846,7 +851,7 @@
         <div class="point-shift-settings"><div class="card-head slim"><div><span class="section-label">Зміни на пості *</span><div class="preview">Оберіть уже створені зміни або створіть наступну.</div></div></div><div class="draft-shift-list">${selectedShifts || '<div class="empty-state">Ще не додано жодної зміни.</div>'}</div><div class="shift-add-row">${availableShifts.length ? `<select class="control" id="availableShiftSelect">${availableShifts.map((shift) => `<option value="${shift}">${shiftLabel(shift)}</option>`).join("")}</select><button class="btn" id="addExistingShift">Додати обрану</button>` : ""}<button class="btn" id="createShiftBtn" ${state.shiftsCount >= MAX_SHIFTS ? "disabled" : ""}>${uiIcon("plus")}Створити зміну ${state.shiftsCount + 1}</button></div></div>
         <div class="point-config"><div><span class="section-label">Проміжки чергування</span><div class="preview interval-preview">${baseIntervals(draft).map((interval) => interval.join("–")).join(", ")}</div></div><div><span class="section-label">Пост не працює</span><div class="closed-list">${draft.closed.map((period, periodIndex) => `<div class="closed-row"><input class="control draft-closed-start" type="time" data-i="${periodIndex}" value="${period[0]}"><span>–</span><input class="control draft-closed-end" type="time" data-i="${periodIndex}" value="${period[1]}"><button class="icon" data-remove-draft-closed="${periodIndex}" title="Видалити час простою" aria-label="Видалити час простою">${uiIcon("x")}</button></div>`).join("") || '<div class="preview">Працює цілодобово</div>'}</div><button class="link" id="addDraftClosed">${uiIcon("plus")}Додати час простою</button></div></div>
         <div class="editor-actions"><button class="btn" id="cancelPostEdit">Скасувати</button><button class="btn primary" id="savePostBtn">Зберегти пост</button></div>
-      </div>`;
+      </div></div>`;
     }
 
     const saved = state.points
@@ -1194,6 +1199,10 @@
     renderAutoSave();
     renderProgress();
     render1();
+    document.body.classList.toggle(
+      "post-modal-open",
+      state.step === 2 && Boolean(state.postDraft),
+    );
     if (state.step === 2) render2();
     if (state.step === 3) render3();
     if (state.step === 4) render4();
@@ -1849,6 +1858,7 @@
     state.lastSavedPoint = null;
     normalizePoint(state.postDraft, editingPoint ?? state.points.length);
     render2();
+    requestAnimationFrame(() => $(".draft-point-name")?.focus());
     save();
   }
 
@@ -2057,7 +2067,7 @@
       return;
     }
 
-    if (event.target.closest("#cancelPostEdit")) {
+    if (event.target.closest("#cancelPostEdit, #closePostEditor")) {
       state.postDraft = null;
       state.editingPoint = null;
       render2();
@@ -2226,6 +2236,14 @@
       state.step = Number(go.dataset.go);
       render();
     }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !state.postDraft) return;
+    state.postDraft = null;
+    state.editingPoint = null;
+    render2();
+    save();
   });
 
   document.addEventListener("input", (event) => {
