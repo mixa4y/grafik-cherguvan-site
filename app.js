@@ -44,6 +44,8 @@
   function makePoint(index = 0, shiftCount = 0) {
     return {
       name: "",
+      startDate: "",
+      dayStart: "",
       duration: 4,
       shiftMode: "alternate",
       peopleRequired: 1,
@@ -375,6 +377,12 @@
       : (target.requirements || []).map((_, index) => index);
     const oldRotations = Array.isArray(target.rotations) ? target.rotations : [];
     target.name = target.name || "";
+    target.startDate = /^\d{4}-\d{2}-\d{2}$/.test(target.startDate)
+      ? target.startDate
+      : state.startDate || today();
+    target.dayStart = /^\d{2}:\d{2}$/.test(target.dayStart)
+      ? target.dayStart
+      : state.dayStart || "08:00";
     target.duration = SHIFT_DURATIONS.includes(Number(target.duration))
       ? Number(target.duration)
       : 4;
@@ -652,7 +660,7 @@
 
   function baseIntervals(point) {
     const intervals = [];
-    const start = mins(state.dayStart);
+    const start = mins(point.dayStart || state.dayStart);
     const step = point.duration * 60;
     for (let minute = 0; minute < 1440; minute += step) {
       intervals.push([clock(start + minute), clock(start + minute + step)]);
@@ -668,6 +676,8 @@
       const events = [];
       state.points.forEach((point) => {
         if (!point.shiftIds.length) return;
+        const pointDay = pointDayIndex(point, day);
+        if (pointDay < 0) return;
         const intervals = activeIntervals(point);
         const dailySlots = baseIntervals(point).length;
         intervals.forEach((interval) => {
@@ -675,7 +685,7 @@
             point.shiftMode === "simultaneous"
               ? point.shiftIds.map((_, slot) => slot)
               : [
-                  (interval.source + day * dailySlots) %
+                  (interval.source + pointDay * dailySlots) %
                     point.shiftIds.length,
                 ];
           slots.forEach((slot) => {
@@ -739,8 +749,8 @@
         </div>`)
         .join("");
       $("#postEditor").innerHTML = `<div class="card post-editor-card">
-        <div class="card-head"><div><h3>${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Дата і початок доби підтягуються з Кроку 1.</div></div></div>
-        <div class="inherited-period"><span><b>Дата початку:</b> ${esc(state.startDate)}</span><span><b>Початок доби:</b> ${esc(state.dayStart)}</span></div>
+        <div class="card-head"><div><h3>${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Початкові значення взято з Кроку 1. Для цього поста їх можна змінити.</div></div></div>
+        <div class="inherited-period"><div class="field" data-help="Дата автоматично підтягується з Кроку 1, але може бути змінена для цього поста."><label>Дата початку поста</label><input class="control draft-start-date" type="date" min="${esc(state.startDate)}" max="${dateInputValueAt(state.daysCount - 1)}" value="${esc(draft.startDate)}"></div><div class="field" data-help="Початок розрахункової доби цього поста. Від нього будуються проміжки чергування."><label>Початок доби поста</label><input class="control draft-day-start" type="time" value="${esc(draft.dayStart)}"></div></div>
         <div class="post-editor-grid">
           <div class="field" data-help="Обов’язкова зрозуміла назва, наприклад «КПП» або «Кухня»."><label>Назва поста *</label><input class="control draft-point-name" value="${esc(draft.name)}" placeholder="Введіть назву поста"></div>
           <div class="field" data-help="Загальна кількість людей для поста. Вона розподіляється між обраними змінами."><label>Загалом людей для поста *</label><input class="control draft-people-required" type="number" min="${Math.max(1, draft.shiftIds.length)}" max="${MAX_PEOPLE_PER_SHIFT}" value="${draft.peopleRequired}"></div>
@@ -757,7 +767,7 @@
 
     const saved = state.points
       .map((point, pointIndex) => `<div class="saved-post-row">
-        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift, slot) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}<span class="shift-headcount">${point.requirements[slot]} ${plural(point.requirements[slot], "людина", "людини", "людей")}</span></span>`).join("")}</span><span class="post-meta-item">${uiIcon("clock")}<b>${point.duration} год</b></span></div></div>
+        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift, slot) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}<span class="shift-headcount">${point.requirements[slot]} ${plural(point.requirements[slot], "людина", "людини", "людей")}</span></span>`).join("")}</span><span class="post-meta-item">${uiIcon("clock")}<b>${point.startDate} · ${point.dayStart} · ${point.duration} год</b></span></div></div>
         <div class="saved-post-buttons"><button class="btn" data-edit-post="${pointIndex}">Редагувати</button><button class="btn" data-duplicate-post="${pointIndex}">Дублювати</button><button class="icon" data-delete-post="${pointIndex}" title="Видалити пост" aria-label="Видалити пост">${uiIcon("trash")}</button></div>
       </div>`)
       .join("");
@@ -903,6 +913,23 @@
     return date;
   }
 
+  function dateInputValueAt(index) {
+    const date = dateAt(index);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function dateSerial(value) {
+    const [year, month, day] = String(value).split("-").map(Number);
+    return Date.UTC(year, month - 1, day) / 86400000;
+  }
+
+  function pointDayIndex(point, scheduleDay) {
+    return (
+      dateSerial(dateInputValueAt(scheduleDay)) -
+      dateSerial(point.startDate || state.startDate)
+    );
+  }
+
   function dayLabel(index) {
     return new Intl.DateTimeFormat("uk-UA", {
       weekday: "short",
@@ -1019,6 +1046,11 @@
       if (!point.shiftIds.length) {
         errors.push(`${point.name || `Пост ${index + 1}`} не має призначеної зміни.`);
       }
+      if (pointDayIndex(point, state.daysCount - 1) < 0) {
+        errors.push(
+          `${point.name || `Пост ${index + 1}`} починається після завершення графіка.`,
+        );
+      }
     });
     return errors;
   }
@@ -1101,9 +1133,13 @@
     }
     if (state.postDraft) {
       const name = $(".draft-point-name");
+      const startDate = $(".draft-start-date");
+      const dayStart = $(".draft-day-start");
       const duration = $(".draft-duration");
       const peopleRequired = $(".draft-people-required");
       if (name) state.postDraft.name = name.value.trim();
+      if (startDate) state.postDraft.startDate = startDate.value || state.startDate;
+      if (dayStart) state.postDraft.dayStart = dayStart.value || state.dayStart;
       if (duration) state.postDraft.duration = Number(duration.value);
       if (peopleRequired) {
         state.postDraft.peopleRequired = clamp(
@@ -1150,6 +1186,12 @@
     if (state.step === 2 && state.points.some((point) => !point.shiftIds.length)) {
       return "Призначте щонайменше одну зміну на кожний пост.";
     }
+    if (
+      state.step === 2 &&
+      state.points.some((point) => pointDayIndex(point, state.daysCount - 1) < 0)
+    ) {
+      return "Дата початку поста має входити у період графіка.";
+    }
     if (state.step === 3 && !state.peopleConfirmed) {
       return "Підтвердьте список людей.";
     }
@@ -1157,7 +1199,7 @@
   }
 
   function activeIntervals(point) {
-    const origin = mins(state.dayStart);
+    const origin = mins(point.dayStart || state.dayStart);
     const relative = (time) => (mins(time) - origin + 1440) % 1440;
     const output = [];
 
@@ -1318,10 +1360,17 @@
         };
 
         for (let day = 0; day < state.daysCount; day += 1) {
+          const pointDay = pointDayIndex(point, day);
+          if (pointDay < 0) {
+            row.shifts.push(null);
+            row.needs.push(0);
+            row.cells.push([]);
+            continue;
+          }
           const slot =
             point.shiftMode === "simultaneous"
               ? interval.shift
-              : (interval.source + day * dailySlots) % point.requirements.length;
+              : (interval.source + pointDay * dailySlots) % point.requirements.length;
           const shift = shiftFor(point, slot);
           const memberMode = point.memberModes[slot] || "rotate";
           const need =
@@ -1338,7 +1387,7 @@
             candidates,
             need,
             memberMode,
-            day * dailySlots + interval.source,
+            pointDay * dailySlots + interval.source,
           );
 
           let placeholderNumber = 1;
@@ -1424,13 +1473,22 @@
 
     state.schedule.rows.forEach((row) => {
       const shifts = row.shifts || row.cells.map(() => row.shift);
-      const unique = [...new Set(shifts)];
+      const unique = [...new Set(shifts.filter((shift) => Number.isInteger(shift)))];
       const shiftSummary =
-        unique.length === 1 ? `зміна ${unique[0] + 1}` : "зміни по днях";
-      html += `<tr><td class="slot"><b>${esc(state.points[row.point].name)}</b><small>${row.start}–${row.end} · ${shiftSummary}</small></td>${row.cells
+        unique.length === 0
+          ? "ще не працює"
+          : unique.length === 1
+            ? `зміна ${unique[0] + 1}`
+            : "зміни по днях";
+      const point = state.points[row.point];
+      const startNote = point.startDate !== state.startDate ? ` · з ${point.startDate}` : "";
+      html += `<tr><td class="slot"><b>${esc(point.name)}</b><small>${row.start}–${row.end} · ${shiftSummary}${startNote}</small></td>${row.cells
         .map(
           (people, day) => {
-            const shift = shifts[day] ?? row.shift;
+            const shift = shifts[day];
+            if (!Number.isInteger(shift)) {
+              return `<td class="schedule-inactive"><span>Пост ще не працює</span></td>`;
+            }
             return `<td class="schedule-shift-cell ${row.conflict[day] || people.some((person) => person.placeholder) ? "neon" : ""}" style="--shift-color:${shiftColor(shift)}">
               <span class="day-shift">${shiftLabel(shift)}</span>
               ${people.map((person) => `<span class="person-chip ${person.placeholder ? "placeholder" : ""}">${esc(person.name)}<br><small>${esc(person.unit || "без підрозділу")}</small></span>`).join("")}
@@ -2105,7 +2163,11 @@
       return;
     }
 
-    if (target.matches(".draft-duration,.draft-people-required")) {
+    if (
+      target.matches(
+        ".draft-duration,.draft-people-required,.draft-start-date,.draft-day-start",
+      )
+    ) {
       read();
       render2();
       save();
