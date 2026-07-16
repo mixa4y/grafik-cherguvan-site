@@ -74,6 +74,17 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   background-size: 21px 21px;
 }
 
+.count input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.count input[type="number"]::-webkit-inner-spin-button,
+.count input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 .seg.three {
   grid-template-columns: repeat(3, 1fr);
 }
