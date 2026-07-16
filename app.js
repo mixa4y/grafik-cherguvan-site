@@ -10,6 +10,9 @@
   const SHIFT_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 24];
   const MAX_SHIFTS = 24;
   const MAX_PEOPLE_PER_SHIFT = 30;
+  const FIELD_DEFAULTS_VERSION = 1;
+  const DEFAULT_UNIT = "Підрозділ не вказано";
+  const DEFAULT_PHONE = "Не вказано";
 
   const steps = [
     ["Початок", "Період і початок розрахункової доби"],
@@ -43,7 +46,7 @@
 
   function makePoint(index = 0, shiftCount = 0) {
     return {
-      name: "",
+      name: `Пост ${index + 1}`,
       startDate: "",
       dayStart: "",
       duration: 4,
@@ -58,8 +61,14 @@
     };
   }
 
-  function makePerson(shift = 0, point = 0) {
-    return { name: "", phone: "", unit: "", point, shift };
+  function makePerson(shift = 0, point = 0, ordinal = 1) {
+    return {
+      name: `Черговий ${ordinal}`,
+      phone: DEFAULT_PHONE,
+      unit: DEFAULT_UNIT,
+      point,
+      shift,
+    };
   }
 
   const defaults = {
@@ -88,6 +97,7 @@
     hybridEdited: false,
     shortageMode: "placeholders",
     schedule: null,
+    fieldDefaultsVersion: FIELD_DEFAULTS_VERSION,
   };
 
   function inferShiftCount(raw) {
@@ -145,6 +155,7 @@
       ? source.assignmentMode
       : "auto";
     next.hybridEdited = Boolean(source.hybridEdited);
+    next.fieldDefaultsVersion = Number(source.fieldDefaultsVersion) || 0;
     if (fromLegacy) {
       next.schedule = null;
       next.peopleConfirmed = false;
@@ -232,6 +243,56 @@
     const date = new Date();
     date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
     return date.toISOString().slice(0, 10);
+  }
+
+  function defaultPointName(index) {
+    return `Пост ${index + 1}`;
+  }
+
+  function personNameProvided(person) {
+    const value = String(person?.name || "").trim();
+    return Boolean(value && !/^Черговий \d+$/.test(value));
+  }
+
+  function personUnitProvided(person) {
+    const value = String(person?.unit || "").trim();
+    return Boolean(value && value !== DEFAULT_UNIT);
+  }
+
+  function personPhoneProvided(person) {
+    const value = String(person?.phone || "").trim();
+    return Boolean(value && value !== DEFAULT_PHONE);
+  }
+
+  function applyFieldDefaults() {
+    if (Number(state.fieldDefaultsVersion) >= FIELD_DEFAULTS_VERSION) return;
+
+    state.points = Array.isArray(state.points) ? state.points : [];
+    state.points.forEach((point, index) => {
+      if (!String(point.name || "").trim()) point.name = defaultPointName(index);
+    });
+
+    if (state.postDraft && !String(state.postDraft.name || "").trim()) {
+      state.postDraft.name = defaultPointName(state.points.length);
+    }
+
+    state.postLibrary = Array.isArray(state.postLibrary) ? state.postLibrary : [];
+    state.postLibrary.forEach((item, index) => {
+      const fallback = item.point?.name || defaultPointName(index);
+      if (!String(item.name || "").trim()) item.name = fallback;
+      if (item.point && !String(item.point.name || "").trim()) {
+        item.point.name = item.name;
+      }
+    });
+
+    state.people = Array.isArray(state.people) ? state.people : [];
+    state.people.forEach((person, index) => {
+      if (!String(person.name || "").trim()) person.name = `Черговий ${index + 1}`;
+      if (!String(person.unit || "").trim()) person.unit = DEFAULT_UNIT;
+      if (!String(person.phone || "").trim()) person.phone = DEFAULT_PHONE;
+    });
+
+    state.fieldDefaultsVersion = FIELD_DEFAULTS_VERSION;
   }
 
   function esc(value) {
@@ -370,13 +431,13 @@
     );
   }
 
-  function normalizePoint(point) {
+  function normalizePoint(point, index = 0) {
     const target = point && typeof point === "object" ? point : makePoint();
     const oldShiftIds = Array.isArray(target.shiftIds)
       ? target.shiftIds.map(Number)
       : (target.requirements || []).map((_, index) => index);
     const oldRotations = Array.isArray(target.rotations) ? target.rotations : [];
-    target.name = target.name || "";
+    target.name = String(target.name || "").trim() || defaultPointName(index);
     target.startDate = /^\d{4}-\d{2}-\d{2}$/.test(target.startDate)
       ? target.startDate
       : state.startDate || today();
@@ -423,6 +484,22 @@
   }
 
   function normalize() {
+    state.startDate = /^\d{4}-\d{2}-\d{2}$/.test(state.startDate)
+      ? state.startDate
+      : today();
+    state.dayStart = /^\d{2}:\d{2}$/.test(state.dayStart)
+      ? state.dayStart
+      : "08:00";
+    state.assignmentMode = ["auto", "hybrid", "manual"].includes(
+      state.assignmentMode,
+    )
+      ? state.assignmentMode
+      : "auto";
+    state.shortageMode = ["placeholders", "redistribute"].includes(
+      state.shortageMode,
+    )
+      ? state.shortageMode
+      : "placeholders";
     state.step = clamp(state.step, 1, 6);
     state.daysCount = clamp(state.daysCount, 1, 31);
     state.points = Array.isArray(state.points) ? state.points : [];
@@ -445,15 +522,20 @@
       MAX_SHIFTS,
     );
 
-    state.points = state.points.map(normalizePoint);
+    state.points = state.points.map((point, index) => normalizePoint(point, index));
     state.pointsCount = state.points.length;
-    if (state.postDraft) state.postDraft = normalizePoint(state.postDraft);
+    if (state.postDraft) {
+      state.postDraft = normalizePoint(
+        state.postDraft,
+        state.editingPoint ?? state.points.length,
+      );
+    }
     state.postLibrary = state.postLibrary
       .filter((item) => item && item.point)
       .map((item, index) => ({
         id: Number(item.id) || index + 1,
         name: item.name || item.point.name || `Пост ${index + 1}`,
-        point: normalizePoint(item.point),
+        point: normalizePoint(item.point, index),
       }));
     state.nextTemplateId = Math.max(
       Number(state.nextTemplateId) || 1,
@@ -484,7 +566,9 @@
         ...populatedMembers,
         ...emptyMembers.slice(0, Math.max(0, target - populatedMembers.length)),
       ];
-      while (members.length < target) members.push(makePerson(shift, 0));
+      while (members.length < target) {
+        members.push(makePerson(shift, 0, roster.length + members.length + 1));
+      }
       const validPoints = assignedPointsForShift(shift);
       members.forEach((person, memberIndex) => {
         person.shift = shift;
@@ -551,7 +635,7 @@
   function filled() {
     return state.people
       .map((person, index) => ({ ...person, index }))
-      .filter((person) => person.name && person.name.trim());
+      .filter(personNameProvided);
   }
 
   function peakNeed() {
@@ -609,7 +693,7 @@
         }
       });
       const members = state.people.filter(
-        (person) => person.name && person.name.trim() && person.shift === shift,
+        (person) => personNameProvided(person) && person.shift === shift,
       );
       members.forEach((person, index) => {
         if (slots.length) person.point = slots[index % slots.length];
@@ -778,9 +862,7 @@
   }
 
   function render3() {
-    const completeCount = state.people.filter(
-      (person) => person.name.trim() && person.unit.trim() && person.phone.trim(),
-    ).length;
+    const completeCount = state.people.filter(personIsComplete).length;
     const calculatedTotal = Array.from(
       { length: state.shiftsCount },
       (_, shift) => Number(state.shiftTargets[shift]) || 0,
@@ -794,9 +876,7 @@
       const members = state.people
         .map((person, index) => ({ ...person, index }))
         .filter((person) => person.shift === shift);
-      const completed = members.filter(
-        (person) => person.name.trim() && person.unit.trim() && person.phone.trim(),
-      ).length;
+      const completed = members.filter(personIsComplete).length;
       const attempted = Boolean(state.validationAttempted[shift]);
       const confirmed = Boolean(state.shiftConfirmed[shift]);
       groups += `<div class="card shift-card" style="--shift-color:${shiftColor(shift)}">
@@ -806,14 +886,16 @@
             (person, memberIndex) => {
               const requiredRow = memberIndex < target;
               const hasAny = Boolean(
-                person.name.trim() || person.unit.trim() || person.phone.trim(),
+                personNameProvided(person) ||
+                  personUnitProvided(person) ||
+                  personPhoneProvided(person),
               );
               const showMissing = attempted && (requiredRow || hasAny);
               return `<div class="person-row ${requiredRow ? "required-person" : "reserve-person"}">
                 <div class="num">${memberIndex + 1}</div>
-                <div class="field unit" data-help="Вкажіть підрозділ, звідки прибула людина."><label>Підрозділ *</label><input class="control person-unit ${showMissing && !person.unit.trim() ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.unit)}" placeholder="Наприклад: 2 рота"></div>
-                <div class="field" data-help="Вкажіть прізвище та ініціали, наприклад «Коваль І. П.»."><label>Прізвище та ініціали *</label><input class="control person-name ${showMissing && !person.name.trim() ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.name)}" placeholder="Прізвище І. П."></div>
-                <div class="field phone" data-help="Контактний номер чергового. Дозволені цифри, пробіли, дужки, + і дефіс."><label>Телефон *</label><input class="control person-phone ${showMissing && !person.phone.trim() ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
+                <div class="field unit" data-help="Замініть дефолтне значення на підрозділ, звідки прибула людина."><label>Підрозділ *</label><input class="control person-unit ${showMissing && !personUnitProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.unit)}" placeholder="Наприклад: 2 рота"></div>
+                <div class="field" data-help="Замініть дефолтне значення на справжнє прізвище та ініціали."><label>Прізвище та ініціали *</label><input class="control person-name ${showMissing && !personNameProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.name)}" placeholder="Прізвище І. П."></div>
+                <div class="field phone" data-help="Замініть дефолтне значення на контактний номер чергового."><label>Телефон *</label><input class="control person-phone ${showMissing && !personPhoneProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
                 <button class="icon remove-person" data-remove-person="${person.index}" title="${requiredRow ? "Цей рядок створено за розрахованою потребою" : "Видалити додаткову людину"}" aria-label="${requiredRow ? "Обов'язковий рядок" : "Видалити додаткову людину"}" ${requiredRow ? "disabled" : ""}>${uiIcon("x")}</button>
               </div>`;
             },
@@ -829,11 +911,7 @@
       (_, shift) => {
         const target = Number(state.shiftTargets[shift]) || 0;
         const completed = state.people.filter(
-          (person) =>
-            person.shift === shift &&
-            person.name.trim() &&
-            person.unit.trim() &&
-            person.phone.trim(),
+          (person) => person.shift === shift && personIsComplete(person),
         ).length;
         return { shift, missing: Math.max(0, target - completed) };
       },
@@ -968,15 +1046,17 @@
         )
         .join("");
 
-      const manualDays = Array.from({ length: state.daysCount }, (_, day) => {
-        const selected = String(rule.manualDays[day] ?? "");
-        return `<div class="manual-day">
-          <label>День ${day + 1} · ${dayLabel(day)}</label>
-          <select class="control manual-day-point" data-shift="${shift}" data-day="${day}">
-            ${rotatable.map((point) => `<option value="${point}" ${selected === String(point) ? "selected" : ""}>${esc(routeName(point))}</option>`).join("")}
-          </select>
-        </div>`;
-      }).join("");
+      const manualDays = rotatable.length
+        ? Array.from({ length: state.daysCount }, (_, day) => {
+            const selected = String(rule.manualDays[day] ?? rotatable[0]);
+            return `<div class="manual-day">
+              <label>День ${day + 1} · ${dayLabel(day)}</label>
+              <select class="control manual-day-point" data-shift="${shift}" data-day="${day}">
+                ${rotatable.map((point) => `<option value="${point}" ${selected === String(point) ? "selected" : ""}>${esc(routeName(point))}</option>`).join("")}
+              </select>
+            </div>`;
+          }).join("")
+        : "";
 
       const postRules = assigned
         .map((pointIndex) => {
@@ -1061,10 +1141,7 @@
       const target = Number(state.shiftTargets[shift]) || 0;
       const named = state.people.filter(
         (person) =>
-          person.shift === shift &&
-          person.name.trim() &&
-          person.unit.trim() &&
-          person.phone.trim(),
+          person.shift === shift && personIsComplete(person),
       ).length;
       if (named < target) {
         warnings.push(
@@ -1403,8 +1480,8 @@
             } else {
               chosen.push({
                 name: `Черговий ${placeholderNumber} · ${shiftLabel(shift)}`,
-                phone: "не вказано",
-                unit: "",
+                phone: DEFAULT_PHONE,
+                unit: DEFAULT_UNIT,
                 id: `x${pointIndex}-${shift}-${day}-${interval.source}-${placeholderNumber}`,
                 placeholder: true,
               });
@@ -1747,13 +1824,30 @@
     state.schedule = null;
   }
 
+  function nextPointName() {
+    const used = new Set(
+      state.points.map((point) => String(point.name || "").trim().toLocaleLowerCase("uk-UA")),
+    );
+    let number = 1;
+    while (used.has(defaultPointName(number - 1).toLocaleLowerCase("uk-UA"))) {
+      number += 1;
+    }
+    return defaultPointName(number - 1);
+  }
+
   function openPostDraft(point = null, editingPoint = null, clearName = false) {
-    state.postDraft = clone(point || makePoint(state.points.length, 0));
-    if (clearName) state.postDraft.name = "";
+    if (!point && state.shiftsCount === 0) {
+      state.shiftsCount = 1;
+      state.shiftRules.push(makeShiftRule());
+    }
+    state.postDraft = clone(
+      point || makePoint(state.points.length, state.shiftsCount),
+    );
+    if (!point || clearName) state.postDraft.name = nextPointName();
     state.editingPoint = editingPoint;
     state.choosingPost = false;
     state.lastSavedPoint = null;
-    normalizePoint(state.postDraft);
+    normalizePoint(state.postDraft, editingPoint ?? state.points.length);
     render2();
     save();
   }
@@ -1784,7 +1878,10 @@
       return;
     }
 
-    const savedPoint = normalizePoint(clone(draft));
+    const savedPoint = normalizePoint(
+      clone(draft),
+      state.editingPoint ?? state.points.length,
+    );
     let savedIndex;
     if (state.editingPoint === null) {
       state.points.push(savedPoint);
@@ -1822,12 +1919,17 @@
 
   function personIsComplete(person) {
     return Boolean(
-      person.name.trim() && person.unit.trim() && person.phone.trim(),
+      personNameProvided(person) &&
+        personUnitProvided(person) &&
+        personPhoneProvided(person),
     );
   }
 
   function personIsPartial(person) {
-    const any = person.name.trim() || person.unit.trim() || person.phone.trim();
+    const any =
+      personNameProvided(person) ||
+      personUnitProvided(person) ||
+      personPhoneProvided(person);
     return Boolean(any && !personIsComplete(person));
   }
 
@@ -2065,7 +2167,13 @@
     const addPerson = event.target.closest("[data-add-person]");
     if (addPerson) {
       const shift = Number(addPerson.dataset.addPerson);
-      state.people.push(makePerson(shift, assignedPointsForShift(shift)[0] || 0));
+      state.people.push(
+        makePerson(
+          shift,
+          assignedPointsForShift(shift)[0] || 0,
+          state.people.length + 1,
+        ),
+      );
       state.shiftConfirmed[shift] = false;
       state.peopleConfirmed = false;
       render3();
@@ -2310,8 +2418,8 @@
 
   installStaticIcons();
   if (!state.startDate) state.startDate = today();
+  applyFieldDefaults();
   normalize();
   render();
   initPrintPage();
 })();
-
