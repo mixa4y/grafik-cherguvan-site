@@ -438,6 +438,32 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   color: var(--shift-color);
 }
 
+.shift-headcount {
+  margin-left: 2px;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--shift-color) 45%, #4c546f);
+  color: #e2e2e4;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.point-config.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.draft-shift-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.draft-shift-title small {
+  color: #e2e2e4;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .post-meta-item {
   color: #d2d2dc;
 }
