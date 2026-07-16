@@ -186,6 +186,50 @@
     );
   }
 
+  const iconPaths = Object.freeze({
+    spreadsheet:
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h2M14 13h2M8 17h2M14 17h2"/>',
+    printer:
+      '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14" rx="1"/>',
+    trash:
+      '<path d="M3 6h18M8 6V4c0-1 .9-2 2-2h4c1.1 0 2 1 2 2v2M19 6l-1 14c-.1 1.1-1 2-2.1 2H8.1C7 22 6.1 21.1 6 20L5 6M10 11v6M14 11v6"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    library:
+      '<path d="m16 6 4 14M12 6v14M8 8v12M4 4v16"/><path d="M3 20h18"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    arrowLeft: '<path d="m15 18-6-6 6-6"/>',
+    arrowRight: '<path d="m9 18 6-6-6-6"/>',
+    arrowUp: '<path d="m18 15-6-6-6 6"/>',
+    arrowDown: '<path d="m6 9 6 6 6-6"/>',
+  });
+
+  function uiIcon(name) {
+    return `<svg class="ui-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${iconPaths[name]}</svg>`;
+  }
+
+  function installStaticIcons() {
+    const buttons = [
+      ["#csvBtn", "spreadsheet", '<span class="word">Excel</span>', "Excel"],
+      ["#printBtn", "printer", '<span class="word">Друк</span>', "Друк"],
+      ["#resetBtn", "trash", '<span class="word">Очистити</span>', "Очистити"],
+      ["#newPostBtn", "plus", "Створити новий пост", "Створити новий пост"],
+      ["#choosePostBtn", "library", "Обрати існуючий пост", "Обрати існуючий пост"],
+      ["#backBtn", "arrowLeft", "Назад", "Назад"],
+    ];
+
+    buttons.forEach(([selector, icon, label, title]) => {
+      const button = $(selector);
+      button.innerHTML = `${uiIcon(icon)}${label}`;
+      button.title = title;
+      button.setAttribute("aria-label", title);
+    });
+
+    const next = $("#nextBtn");
+    next.innerHTML = `Далі${uiIcon("arrowRight")}`;
+    next.title = "Далі";
+    next.setAttribute("aria-label", "Далі");
+  }
+
   function toast(message) {
     const element = $("#toast");
     element.textContent = message;
@@ -608,7 +652,7 @@
         .map((shift, slot) => `<div class="draft-shift-row" style="--shift-color:${shiftColor(shift)}">
           <strong>${shiftLabel(shift)}</strong>
           <div class="seg compact"><label><input type="radio" name="draftRotation${shift}" data-draft-rotation="${slot}" value="fixed" ${draft.rotations[slot]?.mode === "fixed" ? "checked" : ""}>Постійна</label><label><input type="radio" name="draftRotation${shift}" data-draft-rotation="${slot}" value="rotate" ${draft.rotations[slot]?.mode !== "fixed" ? "checked" : ""}>Ротаційна</label></div>
-          <button class="icon" data-remove-draft-shift="${shift}" title="Прибрати зміну з поста">×</button>
+          <button class="icon" data-remove-draft-shift="${shift}" title="Прибрати зміну з поста" aria-label="Прибрати зміну з поста">${uiIcon("x")}</button>
         </div>`)
         .join("");
       $("#postEditor").innerHTML = `<div class="card post-editor-card">
@@ -623,8 +667,8 @@
           <div><span class="section-label">Як зміни закривають пост</span><div class="seg"><label><input type="radio" name="draftShiftMode" data-draft-shift-mode value="alternate" ${draft.shiftMode !== "simultaneous" ? "checked" : ""}>По черзі</label><label><input type="radio" name="draftShiftMode" data-draft-shift-mode value="simultaneous" ${draft.shiftMode === "simultaneous" ? "checked" : ""}>Одночасно</label></div><div class="preview">${draft.shiftMode === "simultaneous" ? "Усі обрані зміни працюють у кожний проміжок." : "Обрані зміни послідовно змінюють одна одну."}</div></div>
           <div><span class="section-label">Як люди працюють усередині зміни</span><div class="seg"><label><input type="radio" name="draftPeopleMode" data-draft-people-mode value="rotate" ${draft.peopleMode !== "full" ? "checked" : ""}>По черзі</label><label><input type="radio" name="draftPeopleMode" data-draft-people-mode value="full" ${draft.peopleMode === "full" ? "checked" : ""}>Одночасно</label></div><div class="preview">${draft.peopleMode === "full" ? `На пост одночасно ${draft.peopleRequired === 1 ? "виходить" : "виходять"} ${draft.peopleRequired} ${plural(draft.peopleRequired, "людина", "людини", "людей")}.` : `${draft.peopleRequired} ${plural(draft.peopleRequired, "людина змінює", "людини змінюють", "людей змінюють")} одне одного по одному.`}</div></div>
         </div>
-        <div class="point-shift-settings"><div class="card-head slim"><div><span class="section-label">Зміни на пості *</span><div class="preview">Оберіть уже створені зміни або створіть наступну.</div></div><span class="badge">Кількість: ${draft.shiftIds.length}</span></div><div class="draft-shift-list">${selectedShifts || '<div class="empty-state">Ще не додано жодної зміни.</div>'}</div><div class="shift-add-row">${availableShifts.length ? `<select class="control" id="availableShiftSelect">${availableShifts.map((shift) => `<option value="${shift}">${shiftLabel(shift)}</option>`).join("")}</select><button class="btn" id="addExistingShift">Додати обрану</button>` : ""}<button class="btn" id="createShiftBtn" ${state.shiftsCount >= MAX_SHIFTS ? "disabled" : ""}>＋ Створити зміну ${state.shiftsCount + 1}</button></div></div>
-        <div class="point-config"><div><span class="section-label">Проміжки чергування</span><div class="preview interval-preview">${baseIntervals(draft).map((interval) => interval.join("–")).join(", ")}</div></div><div><span class="section-label">Пост не працює</span><div class="closed-list">${draft.closed.map((period, periodIndex) => `<div class="closed-row"><input class="control draft-closed-start" type="time" data-i="${periodIndex}" value="${period[0]}"><span>–</span><input class="control draft-closed-end" type="time" data-i="${periodIndex}" value="${period[1]}"><button class="icon" data-remove-draft-closed="${periodIndex}" title="Видалити час простою">×</button></div>`).join("") || '<div class="preview">Працює цілодобово</div>'}</div><button class="link" id="addDraftClosed">＋ Додати час простою</button></div></div>
+        <div class="point-shift-settings"><div class="card-head slim"><div><span class="section-label">Зміни на пості *</span><div class="preview">Оберіть уже створені зміни або створіть наступну.</div></div><span class="badge">Кількість: ${draft.shiftIds.length}</span></div><div class="draft-shift-list">${selectedShifts || '<div class="empty-state">Ще не додано жодної зміни.</div>'}</div><div class="shift-add-row">${availableShifts.length ? `<select class="control" id="availableShiftSelect">${availableShifts.map((shift) => `<option value="${shift}">${shiftLabel(shift)}</option>`).join("")}</select><button class="btn" id="addExistingShift">Додати обрану</button>` : ""}<button class="btn" id="createShiftBtn" ${state.shiftsCount >= MAX_SHIFTS ? "disabled" : ""}>${uiIcon("plus")}Створити зміну ${state.shiftsCount + 1}</button></div></div>
+        <div class="point-config"><div><span class="section-label">Проміжки чергування</span><div class="preview interval-preview">${baseIntervals(draft).map((interval) => interval.join("–")).join(", ")}</div></div><div><span class="section-label">Пост не працює</span><div class="closed-list">${draft.closed.map((period, periodIndex) => `<div class="closed-row"><input class="control draft-closed-start" type="time" data-i="${periodIndex}" value="${period[0]}"><span>–</span><input class="control draft-closed-end" type="time" data-i="${periodIndex}" value="${period[1]}"><button class="icon" data-remove-draft-closed="${periodIndex}" title="Видалити час простою" aria-label="Видалити час простою">${uiIcon("x")}</button></div>`).join("") || '<div class="preview">Працює цілодобово</div>'}</div><button class="link" id="addDraftClosed">${uiIcon("plus")}Додати час простою</button></div></div>
         <div class="editor-actions"><button class="btn" id="cancelPostEdit">Скасувати</button><button class="btn primary" id="savePostBtn">Зберегти пост</button></div>
       </div>`;
     }
@@ -632,11 +676,11 @@
     const saved = state.points
       .map((point, pointIndex) => `<div class="saved-post-row">
         <div><strong>${pointIndex + 1}. ${esc(point.name)}</strong><small>${point.shiftIds.map(shiftLabel).join(", ")} · ${point.peopleRequired} ${plural(point.peopleRequired, "людина", "людини", "людей")} · ${point.duration} год · ${point.peopleMode === "full" ? "одночасно" : "по черзі"}</small></div>
-        <div class="saved-post-buttons"><button class="btn" data-edit-post="${pointIndex}">Редагувати</button><button class="btn" data-duplicate-post="${pointIndex}">Дублювати</button><button class="icon" data-delete-post="${pointIndex}" title="Видалити пост">×</button></div>
+        <div class="saved-post-buttons"><button class="btn" data-edit-post="${pointIndex}">Редагувати</button><button class="btn" data-duplicate-post="${pointIndex}">Дублювати</button><button class="icon" data-delete-post="${pointIndex}" title="Видалити пост" aria-label="Видалити пост">${uiIcon("trash")}</button></div>
       </div>`)
       .join("");
     const savedActions = state.lastSavedPoint !== null && state.points[state.lastSavedPoint]
-      ? `<div class="post-saved-actions"><span><b>Пост «${esc(state.points[state.lastSavedPoint].name)}» збережено.</b></span><div><button class="btn" data-duplicate-post="${state.lastSavedPoint}">Дублювати пост</button><button class="btn" id="newPostAfterSave">Створити новий</button><button class="btn primary" data-step-next>Далі →</button></div></div>`
+      ? `<div class="post-saved-actions"><span><b>Пост «${esc(state.points[state.lastSavedPoint].name)}» збережено.</b></span><div><button class="btn" data-duplicate-post="${state.lastSavedPoint}">Дублювати пост</button><button class="btn" id="newPostAfterSave">${uiIcon("plus")}Створити новий</button><button class="btn primary" data-step-next>Далі${uiIcon("arrowRight")}</button></div></div>`
       : "";
     $("#pointsList").innerHTML = `${savedActions}<div class="saved-posts-head"><h3>Пости поточного графіка</h3><span class="badge">${state.points.length}</span></div>${saved || '<div class="empty-state">Пости ще не створені. Натисніть «Створити новий пост».</div>'}`;
   }
@@ -678,12 +722,12 @@
                 <div class="field unit" data-help="Вкажіть підрозділ, звідки прибула людина."><label>Підрозділ *</label><input class="control person-unit ${showMissing && !person.unit.trim() ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.unit)}" placeholder="Наприклад: 2 рота"></div>
                 <div class="field" data-help="Вкажіть прізвище та ініціали, наприклад «Коваль І. П.»."><label>Прізвище та ініціали *</label><input class="control person-name ${showMissing && !person.name.trim() ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.name)}" placeholder="Прізвище І. П."></div>
                 <div class="field phone" data-help="Контактний номер чергового. Дозволені цифри, пробіли, дужки, + і дефіс."><label>Телефон *</label><input class="control person-phone ${showMissing && !person.phone.trim() ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
-                <button class="icon remove-person" data-remove-person="${person.index}" title="${requiredRow ? "Цей рядок створено за розрахованою потребою" : "Видалити додаткову людину"}" ${requiredRow ? "disabled" : ""}>×</button>
+                <button class="icon remove-person" data-remove-person="${person.index}" title="${requiredRow ? "Цей рядок створено за розрахованою потребою" : "Видалити додаткову людину"}" aria-label="${requiredRow ? "Обов'язковий рядок" : "Видалити додаткову людину"}" ${requiredRow ? "disabled" : ""}>${uiIcon("x")}</button>
               </div>`;
             },
           )
           .join("")}
-        <div class="shift-card-actions"><button class="btn" data-add-person="${shift}">＋ Додати людину</button><button class="btn primary" data-confirm-shift="${shift}">Підтвердити зміну</button></div>
+        <div class="shift-card-actions"><button class="btn" data-add-person="${shift}">${uiIcon("plus")}Додати людину</button><button class="btn primary" data-confirm-shift="${shift}">Підтвердити зміну</button></div>
       </div>`;
     }
     $("#peopleList").innerHTML = groups || '<div class="empty-state">На Кроці 2 ще не створено жодної зміни.</div>';
@@ -808,8 +852,8 @@
             `<div class="route-row">
               <strong>${index + 1}. ${esc(routeName(point))}</strong>
               <div class="route-actions">
-                <button class="icon" data-route-shift="${shift}" data-route-point="${point}" data-route-delta="-1" title="Перемістити вище" ${index === 0 ? "disabled" : ""}>↑</button>
-                <button class="icon" data-route-shift="${shift}" data-route-point="${point}" data-route-delta="1" title="Перемістити нижче" ${index === route.length - 1 ? "disabled" : ""}>↓</button>
+                <button class="icon" data-route-shift="${shift}" data-route-point="${point}" data-route-delta="-1" title="Перемістити вище" aria-label="Перемістити вище" ${index === 0 ? "disabled" : ""}>${uiIcon("arrowUp")}</button>
+                <button class="icon" data-route-shift="${shift}" data-route-point="${point}" data-route-delta="1" title="Перемістити нижче" aria-label="Перемістити нижче" ${index === route.length - 1 ? "disabled" : ""}>${uiIcon("arrowDown")}</button>
               </div>
             </div>`,
         )
@@ -1339,8 +1383,7 @@
     document.body.classList.add("print-page");
     const toolbar = document.createElement("div");
     toolbar.className = "print-toolbar";
-    toolbar.innerHTML =
-      '<button class="btn primary" id="printNowBtn">▣ Друк</button><button class="btn" id="closePrintBtn">× Закрити</button>';
+    toolbar.innerHTML = `<button class="btn primary" id="printNowBtn">${uiIcon("printer")}Друк</button><button class="btn" id="closePrintBtn">${uiIcon("x")}Закрити</button>`;
     document.body.prepend(toolbar);
     toolbar.querySelector("#printNowBtn").onclick = () => window.print();
     toolbar.querySelector("#closePrintBtn").onclick = () => {
@@ -2121,6 +2164,7 @@
     render();
   };
 
+  installStaticIcons();
   if (!state.startDate) state.startDate = today();
   normalize();
   render();
