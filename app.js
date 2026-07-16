@@ -47,10 +47,10 @@
       duration: 4,
       shiftMode: "alternate",
       peopleRequired: 1,
-      peopleMode: "rotate",
+      peopleMode: "full",
       shiftIds: Array.from({ length: shiftCount }, (_, shift) => shift),
       requirements: Array(shiftCount).fill(1),
-      memberModes: Array(shiftCount).fill("rotate"),
+      memberModes: Array(shiftCount).fill("full"),
       closed: [],
       rotations: Array.from({ length: shiftCount }, makeRotation),
     };
@@ -357,30 +357,29 @@
     return rule;
   }
 
+  function distributePointPeople(total, shiftCount) {
+    if (!shiftCount) return [];
+    const safeTotal = clamp(total, shiftCount, MAX_PEOPLE_PER_SHIFT);
+    const base = Math.floor(safeTotal / shiftCount);
+    const remainder = safeTotal % shiftCount;
+    return Array.from(
+      { length: shiftCount },
+      (_, slot) => base + (slot < remainder ? 1 : 0),
+    );
+  }
+
   function normalizePoint(point) {
     const target = point && typeof point === "object" ? point : makePoint();
     const oldShiftIds = Array.isArray(target.shiftIds)
       ? target.shiftIds.map(Number)
       : (target.requirements || []).map((_, index) => index);
     const oldRotations = Array.isArray(target.rotations) ? target.rotations : [];
-    const oldMemberModes = Array.isArray(target.memberModes)
-      ? target.memberModes
-      : [];
     target.name = target.name || "";
     target.duration = SHIFT_DURATIONS.includes(Number(target.duration))
       ? Number(target.duration)
       : 4;
     target.shiftMode =
       target.shiftMode === "simultaneous" ? "simultaneous" : "alternate";
-    target.peopleRequired = clamp(
-      target.peopleRequired ?? Math.max(1, ...(target.requirements || [1])),
-      1,
-      MAX_PEOPLE_PER_SHIFT,
-    );
-    target.peopleMode =
-      target.peopleMode === "full" || oldMemberModes.includes("full")
-        ? "full"
-        : "rotate";
     target.shiftIds = oldShiftIds
       .filter(
         (shift, index) =>
@@ -389,8 +388,17 @@
           oldShiftIds.indexOf(shift) === index,
       )
       .sort((left, right) => left - right);
-    target.requirements = target.shiftIds.map(() => target.peopleRequired);
-    target.memberModes = target.shiftIds.map(() => target.peopleMode);
+    target.peopleRequired = clamp(
+      target.peopleRequired ?? Math.max(1, ...(target.requirements || [1])),
+      Math.max(1, target.shiftIds.length),
+      MAX_PEOPLE_PER_SHIFT,
+    );
+    target.peopleMode = "full";
+    target.requirements = distributePointPeople(
+      target.peopleRequired,
+      target.shiftIds.length,
+    );
+    target.memberModes = target.shiftIds.map(() => "full");
     target.rotations = target.shiftIds.map((shift) => {
       const oldSlot = oldShiftIds.indexOf(shift);
       return {
@@ -453,9 +461,21 @@
     for (let shift = 0; shift < state.shiftsCount; shift += 1) {
       const target = requiredPeopleForShift(shift);
       nextTargets[shift] = target;
-      const members = sourcePeople.filter(
+      const savedMembers = sourcePeople.filter(
         (person) => Number(person.shift) === shift,
       );
+      const populatedMembers = savedMembers.filter((person) =>
+        [person.name, person.phone, person.unit].some((value) =>
+          String(value || "").trim(),
+        ),
+      );
+      const emptyMembers = savedMembers.filter(
+        (person) => !populatedMembers.includes(person),
+      );
+      const members = [
+        ...populatedMembers,
+        ...emptyMembers.slice(0, Math.max(0, target - populatedMembers.length)),
+      ];
       while (members.length < target) members.push(makePerson(shift, 0));
       const validPoints = assignedPointsForShift(shift);
       members.forEach((person, memberIndex) => {
@@ -494,27 +514,30 @@
   function setPointShift(point, shift, enabled) {
     const entries = point.shiftIds.map((id, slot) => ({
       shift: Number(id),
-      need: point.requirements[slot] || 1,
-      memberMode: point.memberModes[slot] || "rotate",
       rotation: point.rotations[slot] || makeRotation(),
     }));
     const at = entries.findIndex((entry) => entry.shift === shift);
     if (enabled && at < 0) {
       entries.push({
         shift,
-        need: point.peopleRequired || 1,
-        memberMode: point.peopleMode || "rotate",
         rotation: makeRotation(),
       });
     }
     if (!enabled && at >= 0) entries.splice(at, 1);
     entries.sort((left, right) => left.shift - right.shift);
     point.shiftIds = entries.map((entry) => entry.shift);
-    point.requirements = entries.map((entry) => entry.need);
-    point.memberModes = entries.map((entry) => entry.memberMode);
     point.rotations = entries.map((entry) => entry.rotation);
-    point.requirements = point.shiftIds.map(() => point.peopleRequired || 1);
-    point.memberModes = point.shiftIds.map(() => point.peopleMode || "rotate");
+    point.peopleRequired = clamp(
+      point.peopleRequired || 1,
+      Math.max(1, point.shiftIds.length),
+      MAX_PEOPLE_PER_SHIFT,
+    );
+    point.peopleMode = "full";
+    point.requirements = distributePointPeople(
+      point.peopleRequired,
+      point.shiftIds.length,
+    );
+    point.memberModes = point.shiftIds.map(() => "full");
   }
 
   function filled() {
@@ -710,24 +733,23 @@
       ).filter((shift) => !draft.shiftIds.includes(shift));
       const selectedShifts = draft.shiftIds
         .map((shift, slot) => `<div class="draft-shift-row" style="--shift-color:${shiftColor(shift)}">
-          <strong>${shiftLabel(shift)}</strong>
+          <div class="draft-shift-title"><strong>${shiftLabel(shift)}</strong><small>${draft.requirements[slot]} ${plural(draft.requirements[slot], "людина", "людини", "людей")}</small></div>
           <div class="seg compact"><label><input type="radio" name="draftRotation${shift}" data-draft-rotation="${slot}" value="fixed" ${draft.rotations[slot]?.mode === "fixed" ? "checked" : ""}>Постійна</label><label><input type="radio" name="draftRotation${shift}" data-draft-rotation="${slot}" value="rotate" ${draft.rotations[slot]?.mode !== "fixed" ? "checked" : ""}>Ротаційна</label></div>
           <button class="icon" data-remove-draft-shift="${shift}" title="Прибрати зміну з поста" aria-label="Прибрати зміну з поста">${uiIcon("x")}</button>
         </div>`)
         .join("");
       $("#postEditor").innerHTML = `<div class="card post-editor-card">
-        <div class="card-head"><div><h3>${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Дата і початок доби підтягуються з Кроку 1.</div></div><span class="badge">${draft.shiftIds.length} ${plural(draft.shiftIds.length, "зміна", "зміни", "змін")}</span></div>
+        <div class="card-head"><div><h3>${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Дата і початок доби підтягуються з Кроку 1.</div></div></div>
         <div class="inherited-period"><span><b>Дата початку:</b> ${esc(state.startDate)}</span><span><b>Початок доби:</b> ${esc(state.dayStart)}</span></div>
         <div class="post-editor-grid">
           <div class="field" data-help="Обов’язкова зрозуміла назва, наприклад «КПП» або «Кухня»."><label>Назва поста *</label><input class="control draft-point-name" value="${esc(draft.name)}" placeholder="Введіть назву поста"></div>
-          <div class="field" data-help="Загальна кількість людей зі зміни, потрібних для роботи цього поста."><label>Людей для поста *</label><input class="control draft-people-required" type="number" min="1" max="${MAX_PEOPLE_PER_SHIFT}" value="${draft.peopleRequired}"></div>
+          <div class="field" data-help="Загальна кількість людей для поста. Вона розподіляється між обраними змінами."><label>Загалом людей для поста *</label><input class="control draft-people-required" type="number" min="${Math.max(1, draft.shiftIds.length)}" max="${MAX_PEOPLE_PER_SHIFT}" value="${draft.peopleRequired}"></div>
           <div class="field" data-help="Тривалість одного проміжку. Доступні лише значення, на які ділиться 24."><label>Тривалість чергування</label><select class="control draft-duration">${SHIFT_DURATIONS.map((duration) => `<option value="${duration}" ${draft.duration === duration ? "selected" : ""}>${duration} год</option>`).join("")}</select></div>
         </div>
-        <div class="point-config">
+        <div class="point-config single">
           <div><span class="section-label">Як зміни закривають пост</span><div class="seg"><label><input type="radio" name="draftShiftMode" data-draft-shift-mode value="alternate" ${draft.shiftMode !== "simultaneous" ? "checked" : ""}>По черзі</label><label><input type="radio" name="draftShiftMode" data-draft-shift-mode value="simultaneous" ${draft.shiftMode === "simultaneous" ? "checked" : ""}>Одночасно</label></div><div class="preview">${draft.shiftMode === "simultaneous" ? "Усі обрані зміни працюють у кожний проміжок." : "Обрані зміни послідовно змінюють одна одну."}</div></div>
-          <div><span class="section-label">Як люди працюють усередині зміни</span><div class="seg"><label><input type="radio" name="draftPeopleMode" data-draft-people-mode value="rotate" ${draft.peopleMode !== "full" ? "checked" : ""}>По черзі</label><label><input type="radio" name="draftPeopleMode" data-draft-people-mode value="full" ${draft.peopleMode === "full" ? "checked" : ""}>Одночасно</label></div><div class="preview">${draft.peopleMode === "full" ? `На пост одночасно ${draft.peopleRequired === 1 ? "виходить" : "виходять"} ${draft.peopleRequired} ${plural(draft.peopleRequired, "людина", "людини", "людей")}.` : `${draft.peopleRequired} ${plural(draft.peopleRequired, "людина змінює", "людини змінюють", "людей змінюють")} одне одного по одному.`}</div></div>
         </div>
-        <div class="point-shift-settings"><div class="card-head slim"><div><span class="section-label">Зміни на пості *</span><div class="preview">Оберіть уже створені зміни або створіть наступну.</div></div><span class="badge">Кількість: ${draft.shiftIds.length}</span></div><div class="draft-shift-list">${selectedShifts || '<div class="empty-state">Ще не додано жодної зміни.</div>'}</div><div class="shift-add-row">${availableShifts.length ? `<select class="control" id="availableShiftSelect">${availableShifts.map((shift) => `<option value="${shift}">${shiftLabel(shift)}</option>`).join("")}</select><button class="btn" id="addExistingShift">Додати обрану</button>` : ""}<button class="btn" id="createShiftBtn" ${state.shiftsCount >= MAX_SHIFTS ? "disabled" : ""}>${uiIcon("plus")}Створити зміну ${state.shiftsCount + 1}</button></div></div>
+        <div class="point-shift-settings"><div class="card-head slim"><div><span class="section-label">Зміни на пості *</span><div class="preview">Оберіть уже створені зміни або створіть наступну.</div></div></div><div class="draft-shift-list">${selectedShifts || '<div class="empty-state">Ще не додано жодної зміни.</div>'}</div><div class="shift-add-row">${availableShifts.length ? `<select class="control" id="availableShiftSelect">${availableShifts.map((shift) => `<option value="${shift}">${shiftLabel(shift)}</option>`).join("")}</select><button class="btn" id="addExistingShift">Додати обрану</button>` : ""}<button class="btn" id="createShiftBtn" ${state.shiftsCount >= MAX_SHIFTS ? "disabled" : ""}>${uiIcon("plus")}Створити зміну ${state.shiftsCount + 1}</button></div></div>
         <div class="point-config"><div><span class="section-label">Проміжки чергування</span><div class="preview interval-preview">${baseIntervals(draft).map((interval) => interval.join("–")).join(", ")}</div></div><div><span class="section-label">Пост не працює</span><div class="closed-list">${draft.closed.map((period, periodIndex) => `<div class="closed-row"><input class="control draft-closed-start" type="time" data-i="${periodIndex}" value="${period[0]}"><span>–</span><input class="control draft-closed-end" type="time" data-i="${periodIndex}" value="${period[1]}"><button class="icon" data-remove-draft-closed="${periodIndex}" title="Видалити час простою" aria-label="Видалити час простою">${uiIcon("x")}</button></div>`).join("") || '<div class="preview">Працює цілодобово</div>'}</div><button class="link" id="addDraftClosed">${uiIcon("plus")}Додати час простою</button></div></div>
         <div class="editor-actions"><button class="btn" id="cancelPostEdit">Скасувати</button><button class="btn primary" id="savePostBtn">Зберегти пост</button></div>
       </div>`;
@@ -735,7 +757,7 @@
 
     const saved = state.points
       .map((point, pointIndex) => `<div class="saved-post-row">
-        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}</span>`).join("")}</span><span class="post-meta-item">${uiIcon("users")}<b>${point.peopleRequired} ${plural(point.peopleRequired, "людина", "людини", "людей")}</b></span><span class="post-meta-item">${uiIcon("clock")}<b>${point.duration} год</b></span></div></div>
+        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift, slot) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}<span class="shift-headcount">${point.requirements[slot]} ${plural(point.requirements[slot], "людина", "людини", "людей")}</span></span>`).join("")}</span><span class="post-meta-item">${uiIcon("clock")}<b>${point.duration} год</b></span></div></div>
         <div class="saved-post-buttons"><button class="btn" data-edit-post="${pointIndex}">Редагувати</button><button class="btn" data-duplicate-post="${pointIndex}">Дублювати</button><button class="icon" data-delete-post="${pointIndex}" title="Видалити пост" aria-label="Видалити пост">${uiIcon("trash")}</button></div>
       </div>`)
       .join("");
@@ -753,8 +775,8 @@
       { length: state.shiftsCount },
       (_, shift) => Number(state.shiftTargets[shift]) || 0,
     ).reduce((sum, need) => sum + need, 0);
-    $("#rosterTotal").innerHTML = `Створено змін: <b>${state.shiftsCount}</b>. Розраховано людей: <b>${calculatedTotal}</b>.`;
-    $("#peopleNeed").innerHTML = `Рядків у списку: <b>${state.people.length}</b>. Повністю заповнено: <b>${completeCount}</b>.`;
+    $("#rosterTotal").innerHTML = `Створено змін: <b>${state.shiftsCount}</b>.`;
+    $("#peopleNeed").innerHTML = `Розраховано людей: <b>${calculatedTotal}</b>. Повністю заповнено: <b>${completeCount}</b>.`;
 
     let groups = "";
     for (let shift = 0; shift < state.shiftsCount; shift += 1) {
@@ -768,7 +790,7 @@
       const attempted = Boolean(state.validationAttempted[shift]);
       const confirmed = Boolean(state.shiftConfirmed[shift]);
       groups += `<div class="card shift-card" style="--shift-color:${shiftColor(shift)}">
-        <div class="card-head"><div><h3>${shiftLabel(shift)}</h3><div class="preview">Потрібно за параметрами постів: ${target}. Додаткові люди вважаються резервом.</div></div><span class="badge shift-status">${confirmed ? "✓ Підтверджено" : `${completed} з ${target} заповнено`}</span></div>
+        <div class="card-head"><div><h3>${shiftLabel(shift)}</h3><div class="preview">Додаткові люди вважаються резервом.</div></div><span class="badge shift-status">${confirmed ? "✓ Підтверджено" : `${completed} з ${target} заповнено`}</span></div>
         ${members
           .map(
             (person, memberIndex) => {
@@ -867,7 +889,7 @@
         const shift = shiftFor(point, slot);
         coverage += `<div class="coverage-card shift-accent-row ${missing ? "short" : ""}" style="--shift-color:${shiftColor(shift)}">
           <b>${esc(point.name)} · ${shiftLabel(shift).toLowerCase()}</b>
-          <small>Потрібно ${need} · призначено ${people.length} · ${point.memberModes[slot] === "full" ? "повним складом" : "люди по черзі"}</small>
+          <small>Потрібно ${need} · призначено ${people.length}</small>
           <div class="names">${people.map((person) => esc(person.name)).join("<br>") || "Немає призначених"}${missing ? `<br><span class="placeholder">Не вистачає: ${missing}</span>` : ""}</div>
         </div>`;
       });
@@ -1035,7 +1057,7 @@
       <div class="review-line"><b>Пости:</b> ${state.points
         .map(
           (point) =>
-            `${esc(point.name)} — ${point.requirements.length} змін (${point.requirements.map((need, slot) => `зм. ${shiftFor(point, slot) + 1}: ${need}, ${point.memberModes[slot] === "full" ? "повним складом" : "по черзі"}`).join("; ")}), ${point.shiftMode === "simultaneous" ? "одночасно" : "по черзі"}`,
+            `${esc(point.name)} — ${point.requirements.length} змін (${point.requirements.map((need, slot) => `зм. ${shiftFor(point, slot) + 1}: ${need}`).join("; ")}), ${point.shiftMode === "simultaneous" ? "одночасно" : "по черзі"}`,
         )
         .join("; ")}</div>
       ${errors.length ? `<div class="warning neon"><b>Потрібно виправити:</b><br>${errors.map(esc).join("<br>")}</div>` : '<div class="review-line status-ok"><b>Критичних помилок немає.</b></div>'}
@@ -1086,11 +1108,12 @@
       if (peopleRequired) {
         state.postDraft.peopleRequired = clamp(
           peopleRequired.value,
-          1,
+          Math.max(1, state.postDraft.shiftIds.length),
           MAX_PEOPLE_PER_SHIFT,
         );
-        state.postDraft.requirements = state.postDraft.shiftIds.map(
-          () => state.postDraft.peopleRequired,
+        state.postDraft.requirements = distributePointPeople(
+          state.postDraft.peopleRequired,
+          state.postDraft.shiftIds.length,
         );
       }
       $$(".draft-closed-start").forEach((element) => {
@@ -2068,17 +2091,6 @@
     if (target.matches("[data-draft-shift-mode]")) {
       read();
       state.postDraft.shiftMode = target.value;
-      render2();
-      save();
-      return;
-    }
-
-    if (target.matches("[data-draft-people-mode]")) {
-      read();
-      state.postDraft.peopleMode = target.value;
-      state.postDraft.memberModes = state.postDraft.shiftIds.map(
-        () => target.value,
-      );
       render2();
       save();
       return;
