@@ -394,6 +394,66 @@ input[type="time"]::-webkit-calendar-picker-indicator:hover {
   line-height: 1.4;
 }
 
+.saved-post-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.saved-post-meta,
+.saved-post-shifts,
+.post-shift-tag,
+.post-meta-item {
+  display: flex;
+  align-items: center;
+}
+
+.saved-post-meta {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.saved-post-shifts {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.post-shift-tag,
+.post-meta-item {
+  min-height: 27px;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #4c546f;
+  border-radius: 5px;
+  background: #252838;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.post-shift-tag {
+  border-color: color-mix(in srgb, var(--shift-color) 58%, #4c546f);
+  background: color-mix(in srgb, var(--shift-color) 8%, #252838);
+  color: var(--shift-color);
+}
+
+.post-meta-item {
+  color: #d2d2dc;
+}
+
+.post-meta-item .ui-icon {
+  width: 15px;
+  height: 15px;
+  flex-basis: 15px;
+  color: var(--accent);
+  stroke-width: 2.25;
+}
+
+.post-meta-item b {
+  font: inherit;
+}
+
 .saved-post-buttons,
 .post-saved-actions > div,
 .shift-card-actions {
