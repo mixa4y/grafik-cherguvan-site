@@ -699,7 +699,7 @@
   }
 
   function shiftColor(shift) {
-    return ["#50FA7B", "#2FDEB6", "#BF9AFF", "#F6779B"][shift % 4];
+    return ["#2FDEB6", "#BF9AFF", "#F6779B", "#50FA7B"][shift % 4];
   }
 
   function shiftLabel(shift) {
