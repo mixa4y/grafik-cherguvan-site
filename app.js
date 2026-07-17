@@ -423,6 +423,47 @@
       .filter((index) => index !== null);
   }
 
+  function setPointRotationMode(pointIndex, shift, mode) {
+    const point = state.points[pointIndex];
+    if (!point) return false;
+    const slot = point.shiftIds.indexOf(shift);
+    if (slot < 0) return false;
+
+    const nextMode = mode === "fixed" ? "fixed" : "rotate";
+    point.rotations[slot] = {
+      ...(point.rotations[slot] || makeRotation()),
+      mode: nextMode,
+    };
+
+    const pointName = point.name.trim().toLocaleLowerCase("uk-UA");
+    const template = state.postLibrary.find(
+      (item) => item.name.trim().toLocaleLowerCase("uk-UA") === pointName,
+    );
+    if (template?.point) {
+      const templateSlot = template.point.shiftIds.indexOf(shift);
+      if (templateSlot >= 0) {
+        template.point.rotations[templateSlot] = {
+          ...(template.point.rotations[templateSlot] || makeRotation()),
+          mode: nextMode,
+        };
+      }
+    }
+
+    if (state.editingPoint === pointIndex && state.postDraft) {
+      const draftSlot = state.postDraft.shiftIds.indexOf(shift);
+      if (draftSlot >= 0) {
+        state.postDraft.rotations[draftSlot] = {
+          ...(state.postDraft.rotations[draftSlot] || makeRotation()),
+          mode: nextMode,
+        };
+      }
+    }
+
+    normalizeShiftRule(shift);
+    state.schedule = null;
+    return true;
+  }
+
   function normalizeShiftRule(shift) {
     while (state.shiftRules.length <= shift) {
       state.shiftRules.push(makeShiftRule());
@@ -1106,6 +1147,10 @@
       const rule = normalizeShiftRule(shift);
       const assigned = assignedPointsForShift(shift);
       const rotatable = validPointsForShift(shift);
+      const fixedCount = assigned.length - rotatable.length;
+      const transitionsDisabled = assigned.length === 0 || rotatable.length === 0;
+      const routeUnavailable =
+        transitionsDisabled || rule.movement === "internal" || rotatable.length < 2;
       const route = rule.route.filter((point) => rotatable.includes(point));
       const routeOrder = (rule.routeMode === "custom" ? route : rotatable)
         .map((point) => esc(routeName(point)))
@@ -1129,7 +1174,7 @@
             const selected = String(rule.manualDays[day] ?? rotatable[0]);
             return `<div class="manual-day">
               <label>День ${day + 1} · ${dayLabel(day)}</label>
-              <select class="control manual-day-point" data-shift="${shift}" data-day="${day}">
+              <select class="control manual-day-point" data-shift="${shift}" data-day="${day}" ${routeUnavailable ? "disabled" : ""}>
                 ${rotatable.map((point) => `<option value="${point}" ${selected === String(point) ? "selected" : ""}>${esc(routeName(point))}</option>`).join("")}
               </select>
             </div>`;
@@ -1140,51 +1185,53 @@
         .map((pointIndex) => {
           const slot = state.points[pointIndex].shiftIds.indexOf(shift);
           const rotation = state.points[pointIndex].rotations[slot];
-          return `<div class="post-rule-row">
-            <strong>${esc(routeName(pointIndex))}</strong>
+          const fixed = rotation.mode === "fixed";
+          return `<div class="post-rule-row ${fixed ? "is-fixed" : "is-rotating"}">
+            <div><strong>${esc(routeName(pointIndex))}</strong><span class="post-rule-state">${fixed ? "Без переходів" : "У маршруті"}</span></div>
             <div class="seg">
-              <label><input type="radio" name="postRule${shift}-${pointIndex}" data-mode="${pointIndex}:${slot}" value="fixed" ${rotation.mode === "fixed" ? "checked" : ""}>Постійна</label>
-              <label><input type="radio" name="postRule${shift}-${pointIndex}" data-mode="${pointIndex}:${slot}" value="rotate" ${rotation.mode !== "fixed" ? "checked" : ""}>Ротаційна</label>
+              <label><input type="radio" name="postRule${shift}-${pointIndex}" data-mode="${pointIndex}:${shift}" value="fixed" ${fixed ? "checked" : ""}>Постійна</label>
+              <label><input type="radio" name="postRule${shift}-${pointIndex}" data-mode="${pointIndex}:${shift}" value="rotate" ${!fixed ? "checked" : ""}>Ротаційна</label>
             </div>
           </div>`;
         })
         .join("");
 
       html += `<div class="card shift-card" style="--shift-color:${shiftColor(shift)};margin-top:12px">
-        <div class="card-head"><h3>Зміна ${shift + 1}</h3><span class="badge">${assigned.length} постів</span></div>
+        <div class="card-head"><h3>Зміна ${shift + 1}</h3><span class="badge">${fixedCount} постійних · ${rotatable.length} ротаційних</span></div>
         <div class="shift-rule-grid">
-          <div class="rule-section">
-            <span class="section-label">Що переходить між постами</span>
+          <fieldset class="rule-section transition-rule ${transitionsDisabled ? "is-disabled" : ""}" ${transitionsDisabled ? "disabled" : ""}>
+            <legend class="section-label">Що переходить між постами</legend>
             <div class="seg three">
               <label><input type="radio" name="movement${shift}" data-movement="${shift}" value="team" ${rule.movement === "team" ? "checked" : ""}>Уся зміна</label>
               <label><input type="radio" name="movement${shift}" data-movement="${shift}" value="individual" ${rule.movement === "individual" ? "checked" : ""}>Окремі люди</label>
               <label><input type="radio" name="movement${shift}" data-movement="${shift}" value="internal" ${rule.movement === "internal" ? "checked" : ""}>Лише всередині</label>
             </div>
-            <div class="rule-note">${
-              rule.movement === "team"
+            <div class="rule-note">${transitionsDisabled
+              ? "Усі призначення цієї зміни постійні. Переходи між постами вимкнено."
+              : rule.movement === "team"
                 ? "Усі групи зміни переходять синхронно, зберігаючи розподіл між постами."
                 : rule.movement === "individual"
                   ? "Люди переходять зі зміщенням і можуть опинятися на різних постах."
-                  : "Люди не переходять між постами, але міняються всередині своїх чергувань."
-            }</div>
+                  : "Люди не переходять між постами, але міняються всередині своїх чергувань."}</div>
 
-            <div class="field" style="margin-top:12px">
-              <label>Порядок переходу</label>
-              <select class="control shift-route-mode" data-shift="${shift}" ${rule.movement === "internal" ? "disabled" : ""}>
-                <option value="auto" ${rule.routeMode === "auto" ? "selected" : ""}>Автоматично на наступний пост</option>
-                <option value="custom" ${rule.routeMode === "custom" ? "selected" : ""}>Власний маршрут</option>
-                <option value="manual" ${rule.routeMode === "manual" ? "selected" : ""}>Вручну по днях</option>
-              </select>
-            </div>
-            ${
-              rule.movement !== "internal" && rule.routeMode !== "manual"
-                ? `<div class="field" style="margin-top:10px"><label>Перехід кожні, днів</label><input class="control shift-frequency" data-shift="${shift}" type="number" min="1" max="31" value="${rule.frequency}"></div>`
-                : ""
-            }
-            ${rule.movement !== "internal" && rule.routeMode === "custom" ? `<div class="route-list">${customRoute || '<div class="preview">Немає ротаційних постів.</div>'}</div>` : ""}
-            ${rule.movement !== "internal" && rule.routeMode === "manual" ? `<div class="manual-days">${manualDays || '<div class="preview">Немає ротаційних постів.</div>'}</div>` : ""}
-            ${rule.movement !== "internal" && rule.routeMode !== "manual" ? `<div class="preview"><b>Маршрут:</b> ${routeOrder || "немає ротаційних постів"}</div>` : ""}
-          </div>
+            <fieldset class="route-settings ${routeUnavailable ? "is-disabled" : ""}" ${routeUnavailable ? "disabled" : ""}>
+              <legend class="section-label">Маршрут переходу</legend>
+              <div class="field">
+                <label>Порядок переходу</label>
+                <select class="control shift-route-mode" data-shift="${shift}">
+                  <option value="auto" ${rule.routeMode === "auto" ? "selected" : ""}>Автоматично на наступний пост</option>
+                  <option value="custom" ${rule.routeMode === "custom" ? "selected" : ""}>Власний маршрут</option>
+                  <option value="manual" ${rule.routeMode === "manual" ? "selected" : ""}>Вручну по днях</option>
+                </select>
+              </div>
+              <div class="field" style="margin-top:10px"><label>Перехід кожні, днів</label><input class="control shift-frequency" data-shift="${shift}" type="number" min="1" max="31" value="${rule.frequency}" ${rule.routeMode === "manual" ? "disabled" : ""}></div>
+              ${rule.routeMode === "custom" ? `<div class="route-list">${customRoute || '<div class="preview">Немає ротаційних постів.</div>'}</div>` : ""}
+              ${rule.routeMode === "manual" ? `<div class="manual-days">${manualDays || '<div class="preview">Немає ротаційних постів.</div>'}</div>` : ""}
+              ${rule.routeMode !== "manual" ? `<div class="preview"><b>Маршрут:</b> ${routeOrder || "немає ротаційних постів"}</div>` : ""}
+              ${!transitionsDisabled && rotatable.length < 2 ? '<div class="blocked-note">Для переходу потрібні щонайменше два ротаційні пости.</div>' : ""}
+              ${!transitionsDisabled && rule.movement === "internal" ? '<div class="blocked-note">Обрано заміну лише всередині поста, тому маршрут не використовується.</div>' : ""}
+            </fieldset>
+          </fieldset>
           <div class="rule-section">
             <span class="section-label">Правило на кожному пості</span>
             <div class="post-rule-list">${postRules || '<div class="preview">Зміна не призначена на пости.</div>'}</div>
@@ -1657,53 +1704,188 @@
   }
 
   function scheduleStatistics() {
-    const completePeople = state.people.filter(personIsComplete);
+    const people = new Map();
+    state.people.forEach((person, index) => {
+      if (!personNameProvided(person)) return;
+      people.set(`p${index}`, {
+        id: `p${index}`,
+        name: person.name,
+        phone: person.phone,
+        unit: person.unit,
+        shift: Number(person.shift),
+        reserve: Boolean(person.reserve),
+        duties: 0,
+        minutes: 0,
+        days: new Set(),
+        points: new Map(),
+        shifts: new Map(),
+      });
+    });
+
+    const shifts = new Map(
+      activeShiftIds().map((shift) => [
+        shift,
+        {
+          shift,
+          people: new Set(),
+          duties: 0,
+          minutes: 0,
+          placeholders: 0,
+        },
+      ]),
+    );
     let assignments = 0;
     let placeholders = 0;
     const scheduledPeople = new Set();
+
     state.schedule.rows.forEach((row) => {
-      row.cells.forEach((people) => {
-        assignments += people.length;
-        people.forEach((person) => {
-          if (person.placeholder) placeholders += 1;
-          else scheduledPeople.add(person.id);
+      let duration = mins(row.end) - mins(row.start);
+      if (duration <= 0) duration += 1440;
+
+      row.cells.forEach((cell, day) => {
+        const shift = Number.isInteger(row.shifts?.[day])
+          ? row.shifts[day]
+          : row.shift;
+        if (!Number.isInteger(shift)) return;
+        if (!shifts.has(shift)) {
+          shifts.set(shift, {
+            shift,
+            people: new Set(),
+            duties: 0,
+            minutes: 0,
+            placeholders: 0,
+          });
+        }
+        const shiftStats = shifts.get(shift);
+
+        assignments += cell.length;
+        cell.forEach((person) => {
+          shiftStats.duties += 1;
+          if (person.placeholder) {
+            placeholders += 1;
+            shiftStats.placeholders += 1;
+            return;
+          }
+
+          scheduledPeople.add(person.id);
+          shiftStats.people.add(person.id);
+          shiftStats.minutes += duration;
+
+          if (!people.has(person.id)) {
+            people.set(person.id, {
+              id: person.id,
+              name: person.name,
+              phone: person.phone,
+              unit: person.unit,
+              shift: Number(person.shift ?? shift),
+              reserve: Boolean(person.reserve),
+              duties: 0,
+              minutes: 0,
+              days: new Set(),
+              points: new Map(),
+              shifts: new Map(),
+            });
+          }
+          const personStats = people.get(person.id);
+          personStats.duties += 1;
+          personStats.minutes += duration;
+          personStats.days.add(day);
+          personStats.points.set(
+            row.point,
+            (personStats.points.get(row.point) || 0) + 1,
+          );
+          personStats.shifts.set(
+            shift,
+            (personStats.shifts.get(shift) || 0) + 1,
+          );
         });
       });
     });
+
     return {
-      required: activeShiftIds().reduce(
-        (sum, shift) => sum + (Number(state.shiftTargets[shift]) || 0),
-        0,
-      ),
-      complete: completePeople.length,
-      reserves: completePeople.filter((person) => person.reserve).length,
       scheduled: scheduledPeople.size,
       assignments,
       placeholders,
+      minutes: [...people.values()].reduce(
+        (sum, person) => sum + person.minutes,
+        0,
+      ),
+      people: [...people.values()].sort(
+        (left, right) =>
+          left.shift - right.shift ||
+          right.duties - left.duties ||
+          left.name.localeCompare(right.name, "uk-UA"),
+      ),
+      shifts: [...shifts.values()].sort((left, right) => left.shift - right.shift),
     };
+  }
+
+  function statisticHours(minutes) {
+    return (minutes / 60).toLocaleString("uk-UA", {
+      minimumFractionDigits: minutes % 60 ? 1 : 0,
+      maximumFractionDigits: 2,
+    });
   }
 
   function renderScheduleStats() {
     const stats = scheduleStatistics();
-    const shifts = activeShiftIds()
-      .map((shift) => {
-        const required = Number(state.shiftTargets[shift]) || 0;
-        const complete = state.people.filter(
-          (person) => person.shift === shift && personIsComplete(person),
-        ).length;
-        return `<span class="shift-stat" style="--shift-color:${shiftColor(shift)}"><b>${shiftLabel(shift)}</b>${complete} із ${required}</span>`;
+    const shifts = stats.shifts
+      .map((item) => {
+        const missing = item.placeholders
+          ? `<span class="shift-missing">${item.placeholders} незаповнених</span>`
+          : "";
+        return `<div class="shift-stat" style="--shift-color:${shiftColor(item.shift)}">
+          <b>${shiftLabel(item.shift)}</b>
+          <span>${item.people.size} людей</span>
+          <span>${item.duties} чергувань</span>
+          <span>${statisticHours(item.minutes)} год</span>
+          ${missing}
+        </div>`;
       })
       .join("");
-    $("#scheduleStats").innerHTML = `<div class="schedule-stat-grid">
-      <div><span>Резерв</span><b>${stats.reserves}</b></div>
-      <div><span>Потрібно людей</span><b>${stats.required}</b></div>
-      <div><span>Заповнено людей</span><b>${stats.complete}</b></div>
-      <div><span>Задіяно у графіку</span><b>${stats.scheduled}</b></div>
-      <div><span>Усього призначень</span><b>${stats.assignments}</b></div>
+
+    const people = stats.people
+      .map((person) => {
+        const points = [...person.points.entries()]
+          .sort((left, right) => left[0] - right[0])
+          .map(
+            ([point, duties]) =>
+              `<span><b>${esc(routeName(point))}</b>${duties}</span>`,
+          )
+          .join("");
+        const shiftBreakdown = [...person.shifts.entries()]
+          .sort((left, right) => left[0] - right[0])
+          .map(
+            ([shift, duties]) =>
+              `<span style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}: <b>${duties}</b></span>`,
+          )
+          .join("");
+        const phone = personPhoneProvided(person)
+          ? `<a href="tel:${esc(person.phone.replace(/[^+\d]/g, ""))}">${esc(person.phone)}</a>`
+          : '<span class="stat-muted">Телефон не вказано</span>';
+        return `<article class="person-stat-card" style="--shift-color:${shiftColor(person.shift)}">
+          <div class="person-stat-head"><div><strong>${esc(person.name)}</strong><small>${esc(person.unit || "Підрозділ не вказано")}</small></div><span class="person-shift">${shiftLabel(person.shift)}</span></div>
+          <div class="person-metrics">
+            <div><b>${person.duties}</b><span>чергувань</span></div>
+            <div><b>${statisticHours(person.minutes)}</b><span>годин</span></div>
+            <div><b>${person.days.size}</b><span>днів</span></div>
+          </div>
+          <div class="person-point-stats">${points || '<span class="stat-muted">У графіку не призначено</span>'}</div>
+          ${shiftBreakdown ? `<div class="person-shift-stats">${shiftBreakdown}</div>` : ""}
+          <div class="person-stat-phone">${phone}</div>
+        </article>`;
+      })
+      .join("");
+
+    $("#scheduleStats").innerHTML = `<div class="schedule-stat-grid compact-stats">
+      <div><span>Задіяно людей</span><b>${stats.scheduled}</b></div>
+      <div><span>Усього чергувань</span><b>${stats.assignments}</b></div>
+      <div><span>Відпрацьовано годин</span><b>${statisticHours(stats.minutes)}</b></div>
       <div class="${stats.placeholders ? "stat-alert" : ""}"><span>Незаповнених місць</span><b>${stats.placeholders}</b></div>
     </div>
     <div class="duty-officer-summary"><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><a href="tel:${esc(state.dutyOfficerPhone.replace(/[^+\d]/g, ""))}">${esc(state.dutyOfficerPhone)}</a></div>
-    <div class="shift-stat-list">${shifts}</div>`;
+    <section class="statistics-section"><h3>Зведення за змінами</h3><div class="shift-stat-list">${shifts}</div></section>
+    <section class="statistics-section"><h3>Навантаження чергових</h3><div class="person-stat-grid">${people || '<div class="empty-state">У графіку немає заповнених чергових.</div>'}</div></section>`;
     $("#scheduleStats").classList.remove("hidden");
   }
 
@@ -2516,13 +2698,11 @@
     }
 
     if (target.matches("[data-mode]")) {
-      const [point, slot] = target.dataset.mode.split(":").map(Number);
-      state.points[point].rotations[slot].mode = target.value;
-      const shift = shiftFor(state.points[point], slot);
-      normalizeShiftRule(shift);
-      state.schedule = null;
-      render5();
-      save();
+      const [point, shift] = target.dataset.mode.split(":").map(Number);
+      if (setPointRotationMode(point, shift, target.value)) {
+        render5();
+        save();
+      }
       return;
     }
 
