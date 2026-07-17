@@ -1961,6 +1961,13 @@
     state.step = 6;
     render();
     document.body.classList.add("print-page");
+    if (output === "pdf") document.body.classList.add("pdf-page");
+
+    const documentHeader = document.createElement("header");
+    documentHeader.className = "print-document-head";
+    documentHeader.innerHTML = `<div><h1>Графік чергувань</h1><p>${dateAt(0).toLocaleDateString("uk-UA")} — ${dateAt(state.daysCount - 1).toLocaleDateString("uk-UA")} · службова доба з ${esc(state.dayStart)}</p></div><div><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><span>${esc(state.dutyOfficerPhone)}</span></div>`;
+    $("#step6").prepend(documentHeader);
+
     const toolbar = document.createElement("div");
     toolbar.className = "print-toolbar";
     toolbar.innerHTML = `${output === "pdf" ? '<span class="print-hint">У вікні друку оберіть «Зберегти як PDF».</span>' : ""}<button class="btn primary" id="printNowBtn">${uiIcon(output === "pdf" ? "fileText" : "printer")}${output === "pdf" ? "Зберегти PDF" : "Друк"}</button><button class="btn" id="closePrintBtn">${uiIcon("x")}Закрити</button>`;
