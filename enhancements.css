@@ -731,6 +731,156 @@ body.post-modal-open {
   color: var(--muted);
 }
 
+.print-document-head {
+  display: none;
+}
+
+body.print-page {
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --surface: #f1f3f5;
+  --text: #111111;
+  --muted: #4b5563;
+  --accent: #087f6b;
+  --accent2: #0b6b5c;
+  --border: #8b949e;
+  --red: #b42318;
+  background: #ffffff !important;
+  color: #111111 !important;
+  color-scheme: light;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body.print-page .print-document-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  padding: 0 0 10px;
+  border-bottom: 2px solid #111111;
+  background: #ffffff !important;
+  color: #111111 !important;
+}
+
+body.print-page .print-document-head h1 {
+  margin: 0;
+  color: #111111;
+  font-size: 20px;
+}
+
+body.print-page .print-document-head p,
+body.print-page .print-document-head span,
+body.print-page .print-document-head b {
+  display: block;
+  color: #333333;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+body.print-page .print-document-head p {
+  margin-top: 3px;
+  text-align: left;
+}
+
+body.print-page .print-document-head b {
+  color: #111111;
+  font-size: 12px;
+}
+
+body.print-page .panel,
+body.print-page #step6,
+body.print-page .schedule-stats,
+body.print-page .schedule-stat-grid,
+body.print-page .schedule-stat-grid > div,
+body.print-page .duty-officer-summary,
+body.print-page .statistics-section,
+body.print-page .shift-stat,
+body.print-page .person-stat-card,
+body.print-page .person-metrics,
+body.print-page .person-metrics > div,
+body.print-page .person-point-stats > span,
+body.print-page .person-shift-stats > span,
+body.print-page .table-wrap,
+body.print-page .schedule,
+body.print-page .schedule td,
+body.print-page .slot {
+  background: #ffffff !important;
+  color: #111111 !important;
+  box-shadow: none !important;
+}
+
+body.print-page .schedule-stats,
+body.print-page .statistics-section,
+body.print-page .person-stat-phone {
+  border-color: #8b949e !important;
+}
+
+body.print-page .schedule-stat-grid,
+body.print-page .person-metrics {
+  background: #8b949e !important;
+  border-color: #8b949e !important;
+}
+
+body.print-page .schedule th {
+  background: #e9ecef !important;
+  color: #111111 !important;
+  border-color: #707780 !important;
+}
+
+body.print-page .schedule td,
+body.print-page .slot,
+body.print-page .table-wrap {
+  border-color: #707780 !important;
+}
+
+body.print-page .person-chip {
+  border: 1px solid #c3c8ce;
+  background: #f4f5f6 !important;
+  color: #111111 !important;
+  text-shadow: none !important;
+}
+
+body.print-page .person-chip small,
+body.print-page .slot small,
+body.print-page .schedule-stat-grid span,
+body.print-page .person-metrics span,
+body.print-page .person-stat-head small,
+body.print-page .stat-muted {
+  color: #444444 !important;
+}
+
+body.print-page .schedule-stat-grid b,
+body.print-page .duty-officer-summary a,
+body.print-page .statistics-section h3,
+body.print-page .shift-stat b,
+body.print-page .person-stat-head strong,
+body.print-page .person-shift,
+body.print-page .person-metrics b,
+body.print-page .person-point-stats > span b,
+body.print-page .person-shift-stats > span b,
+body.print-page .person-stat-phone a,
+body.print-page .day-shift {
+  color: #111111 !important;
+  text-shadow: none !important;
+}
+
+body.print-page .neon {
+  border-color: #b42318 !important;
+  background: #fff5f5 !important;
+  box-shadow: inset 0 0 0 1px #b42318 !important;
+}
+
+body.print-page .placeholder,
+body.print-page .conflict,
+body.print-page .stat-alert b,
+body.print-page .shift-missing {
+  color: #b42318 !important;
+  text-shadow: none !important;
+}
+
 .print-hint {
   margin-right: auto;
   color: #333;
