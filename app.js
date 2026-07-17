@@ -10,7 +10,7 @@
   const SHIFT_DURATIONS = [1, 2, 3, 4, 6, 8, 12, 24];
   const MAX_SHIFTS = 24;
   const MAX_PEOPLE_PER_SHIFT = 30;
-  const FIELD_DEFAULTS_VERSION = 1;
+  const FIELD_DEFAULTS_VERSION = 2;
   const DEFAULT_UNIT = "Підрозділ не вказано";
   const DEFAULT_PHONE = "Не вказано";
 
@@ -61,13 +61,14 @@
     };
   }
 
-  function makePerson(shift = 0, point = 0, ordinal = 1) {
+  function makePerson(shift = 0, point = 0, reserve = false) {
     return {
-      name: `Черговий ${ordinal}`,
-      phone: DEFAULT_PHONE,
-      unit: DEFAULT_UNIT,
+      name: "",
+      phone: "",
+      unit: "",
       point,
       shift,
+      reserve,
     };
   }
 
@@ -76,6 +77,8 @@
     startDate: "",
     dayStart: "08:00",
     daysCount: 7,
+    dutyOfficerName: "",
+    dutyOfficerPhone: "",
     pointsCount: 0,
     shiftsCount: 0,
     peoplePerShift: 0,
@@ -199,6 +202,7 @@
   }
 
   function save() {
+    syncScheduleActions();
     try {
       const serialized = JSON.stringify(state);
       if (autoSaveEnabled) {
@@ -286,10 +290,11 @@
     });
 
     state.people = Array.isArray(state.people) ? state.people : [];
-    state.people.forEach((person, index) => {
-      if (!String(person.name || "").trim()) person.name = `Черговий ${index + 1}`;
-      if (!String(person.unit || "").trim()) person.unit = DEFAULT_UNIT;
-      if (!String(person.phone || "").trim()) person.phone = DEFAULT_PHONE;
+    state.people.forEach((person) => {
+      if (/^Черговий \d+$/.test(String(person.name || "").trim())) person.name = "";
+      if (String(person.unit || "").trim() === DEFAULT_UNIT) person.unit = "";
+      if (String(person.phone || "").trim() === DEFAULT_PHONE) person.phone = "";
+      person.reserve = Boolean(person.reserve);
     });
 
     state.fieldDefaultsVersion = FIELD_DEFAULTS_VERSION;
@@ -308,6 +313,8 @@
   const iconPaths = Object.freeze({
     spreadsheet:
       '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h2M14 13h2M8 17h2M14 17h2"/>',
+    fileText:
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
     printer:
       '<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14" rx="1"/>',
     trash:
@@ -332,7 +339,8 @@
 
   function installStaticIcons() {
     const buttons = [
-      ["#csvBtn", "spreadsheet", '<span class="word">Excel</span>', "Excel"],
+      ["#csvBtn", "spreadsheet", '<span class="word">Excel</span>', "Експорт в Excel"],
+      ["#pdfBtn", "fileText", '<span class="word">PDF</span>', "Експорт у PDF"],
       ["#printBtn", "printer", '<span class="word">Друк</span>', "Друк"],
       ["#resetBtn", "trash", '<span class="word">Очистити</span>', "Очистити"],
       ["#newPostBtn", "plus", "Створити новий пост", "Створити новий пост"],
@@ -353,6 +361,14 @@
     next.setAttribute("aria-label", "Далі");
   }
 
+  function syncScheduleActions() {
+    const ready = Boolean(state.schedule);
+    ["#csvBtn", "#pdfBtn", "#printBtn"].forEach((selector) => {
+      const button = $(selector);
+      if (button) button.classList.toggle("hidden", !ready);
+    });
+  }
+
   function toast(message) {
     const element = $("#toast");
     element.textContent = message;
@@ -369,6 +385,12 @@
     return state.points
       .map((point, index) => (point.shiftIds.includes(shift) ? index : null))
       .filter((index) => index !== null);
+  }
+
+  function activeShiftIds() {
+    return Array.from({ length: state.shiftsCount }, (_, shift) => shift).filter(
+      (shift) => Number(state.shiftTargets[shift]) > 0,
+    );
   }
 
   function validPointsForShift(shift) {
@@ -554,24 +576,29 @@
       const savedMembers = sourcePeople.filter(
         (person) => Number(person.shift) === shift,
       );
-      const populatedMembers = savedMembers.filter((person) =>
-        [person.name, person.phone, person.unit].some((value) =>
-          String(value || "").trim(),
-        ),
-      );
-      const emptyMembers = savedMembers.filter(
-        (person) => !populatedMembers.includes(person),
-      );
-      const members = [
-        ...populatedMembers,
-        ...emptyMembers.slice(0, Math.max(0, target - populatedMembers.length)),
-      ];
-      while (members.length < target) {
-        members.push(makePerson(shift, 0, roster.length + members.length + 1));
+      const requiredMembers = savedMembers
+        .filter((person) => !person.reserve)
+        .sort((left, right) => {
+          const leftFilled = [left.name, left.phone, left.unit].some((value) =>
+            String(value || "").trim(),
+          );
+          const rightFilled = [right.name, right.phone, right.unit].some((value) =>
+            String(value || "").trim(),
+          );
+          return Number(rightFilled) - Number(leftFilled);
+        })
+        .slice(0, target);
+      while (requiredMembers.length < target) {
+        requiredMembers.push(makePerson(shift, 0));
       }
+      const reserves = target
+        ? savedMembers.filter((person) => person.reserve)
+        : [];
+      const members = [...requiredMembers, ...reserves];
       const validPoints = assignedPointsForShift(shift);
       members.forEach((person, memberIndex) => {
         person.shift = shift;
+        person.reserve = memberIndex >= target;
         person.name = person.name || "";
         person.phone = person.phone || "";
         person.unit = person.unit || "";
@@ -596,11 +623,10 @@
     for (let shift = 0; shift < state.shiftsCount; shift += 1) {
       normalizeShiftRule(shift);
     }
+    const activeShifts = activeShiftIds();
     state.peopleConfirmed =
-      state.shiftsCount > 0 &&
-      Array.from({ length: state.shiftsCount }, (_, shift) =>
-        Boolean(state.shiftConfirmed[shift]),
-      ).every(Boolean);
+      activeShifts.length > 0 &&
+      activeShifts.every((shift) => Boolean(state.shiftConfirmed[shift]));
   }
 
   function setPointShift(point, shift, enabled) {
@@ -728,6 +754,8 @@
     $("#startDate").value = state.startDate;
     $("#dayStart").value = state.dayStart;
     $("#daysCount").value = state.daysCount;
+    $("#dutyOfficerName").value = state.dutyOfficerName || "";
+    $("#dutyOfficerPhone").value = state.dutyOfficerPhone || "";
   }
 
   const mins = (time) => {
@@ -793,7 +821,7 @@
   }
 
   function shiftColor(shift) {
-    return ["#2FDEB6", "#BF9AFF", "#F6779B", "#50FA7B"][shift % 4];
+    return ["#2FDEB6", "#BF9AFF", "#7AC9FF", "#50FA7B"][shift % 4];
   }
 
   function shiftLabel(shift) {
@@ -811,6 +839,11 @@
 
   function render2() {
     const draft = state.postDraft;
+    const choosePostButton = $("#choosePostBtn");
+    choosePostButton.disabled = state.postLibrary.length === 0;
+    choosePostButton.title = state.postLibrary.length
+      ? "Обрати пост із локальної бібліотеки"
+      : "Бібліотека постів поки порожня";
     document.body.classList.toggle(
       "post-modal-open",
       state.step === 2 && Boolean(draft),
@@ -861,23 +894,25 @@
       </div>`)
       .join("");
     const savedActions = state.lastSavedPoint !== null && state.points[state.lastSavedPoint]
-      ? `<div class="post-saved-actions"><span><b>Пост «${esc(state.points[state.lastSavedPoint].name)}» збережено.</b></span><div><button class="btn" data-duplicate-post="${state.lastSavedPoint}">Дублювати пост</button><button class="btn" id="newPostAfterSave">${uiIcon("plus")}Створити новий</button><button class="btn primary" data-step-next>Далі${uiIcon("arrowRight")}</button></div></div>`
+      ? `<div class="post-saved-actions"><span><b>Пост «${esc(state.points[state.lastSavedPoint].name)}» збережено.</b><small>Можна створити наступний пост або продовжити кнопкою «Далі» внизу сторінки.</small></span><div><button class="btn" data-duplicate-post="${state.lastSavedPoint}">Дублювати пост</button><button class="btn" id="newPostAfterSave">${uiIcon("plus")}Створити новий</button></div></div>`
       : "";
-    $("#pointsList").innerHTML = `${savedActions}<div class="saved-posts-head"><h3>Пости поточного графіка</h3><span class="badge">${state.points.length}</span></div>${saved || '<div class="empty-state">Пости ще не створені. Натисніть «Створити новий пост».</div>'}`;
+    $("#pointsList").innerHTML = `<div class="saved-posts-head"><h3>Пости поточного графіка</h3><span class="badge">${state.points.length}</span></div>${savedActions}${saved || '<div class="empty-state">Пости ще не створені. Натисніть «Створити новий пост».</div>'}`;
   }
 
   function render3() {
     const completeCount = state.people.filter(personIsComplete).length;
+    const activeShifts = activeShiftIds();
     const calculatedTotal = Array.from(
       { length: state.shiftsCount },
       (_, shift) => Number(state.shiftTargets[shift]) || 0,
     ).reduce((sum, need) => sum + need, 0);
-    $("#rosterTotal").innerHTML = `Створено змін: <b>${state.shiftsCount}</b>.`;
+    $("#rosterTotal").innerHTML = `Змін на постах: <b>${activeShifts.length}</b>.`;
     $("#peopleNeed").innerHTML = `Розраховано людей: <b>${calculatedTotal}</b>. Повністю заповнено: <b>${completeCount}</b>.`;
 
     let groups = "";
     for (let shift = 0; shift < state.shiftsCount; shift += 1) {
       const target = Number(state.shiftTargets[shift]) || 0;
+      if (!target) continue;
       const members = state.people
         .map((person, index) => ({ ...person, index }))
         .filter((person) => person.shift === shift);
@@ -898,9 +933,9 @@
               const showMissing = attempted && (requiredRow || hasAny);
               return `<div class="person-row ${requiredRow ? "required-person" : "reserve-person"}">
                 <div class="num">${memberIndex + 1}</div>
-                <div class="field unit" data-help="Замініть дефолтне значення на підрозділ, звідки прибула людина."><label>Підрозділ *</label><input class="control person-unit ${showMissing && !personUnitProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.unit)}" placeholder="Наприклад: 2 рота"></div>
-                <div class="field" data-help="Замініть дефолтне значення на справжнє прізвище та ініціали."><label>Прізвище та ініціали *</label><input class="control person-name ${showMissing && !personNameProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.name)}" placeholder="Прізвище І. П."></div>
-                <div class="field phone" data-help="Замініть дефолтне значення на контактний номер чергового."><label>Телефон *</label><input class="control person-phone ${showMissing && !personPhoneProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
+                <div class="field unit" data-help="Введіть підрозділ. Текст-підказка зникне автоматично, щойно ви почнете вводити."><label>Підрозділ *</label><input class="control person-unit ${showMissing && !personUnitProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.unit)}" placeholder="Введіть підрозділ"></div>
+                <div class="field" data-help="Введіть прізвище та ініціали. Підказку не потрібно стирати."><label>Прізвище та ініціали *</label><input class="control person-name ${showMissing && !personNameProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.name)}" placeholder="Черговий ${memberIndex + 1}: прізвище та ініціали"></div>
+                <div class="field phone" data-help="Введіть контактний номер. Підказка автоматично заміниться введеним текстом."><label>Телефон *</label><input class="control person-phone ${showMissing && !personPhoneProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
                 <button class="icon remove-person" data-remove-person="${person.index}" title="${requiredRow ? "Цей рядок створено за розрахованою потребою" : "Видалити додаткову людину"}" aria-label="${requiredRow ? "Обов'язковий рядок" : "Видалити додаткову людину"}" ${requiredRow ? "disabled" : ""}>${uiIcon("x")}</button>
               </div>`;
             },
@@ -945,6 +980,17 @@
       .join("");
   }
 
+  function assignmentErrors() {
+    return filled().flatMap((person) => {
+      const validPoints = assignedPointsForShift(person.shift);
+      if (validPoints.includes(person.point)) return [];
+      const currentPoint = state.points[person.point]?.name || `Пост ${person.point + 1}`;
+      return [
+        `${person.name}: ${shiftLabel(person.shift)} не призначена на пост «${currentPoint}».`,
+      ];
+    });
+  }
+
   function render4() {
     $$("[data-assignment-mode]").forEach((element) => {
       element.checked = element.value === state.assignmentMode;
@@ -969,10 +1015,17 @@
           .join("")
       : "";
 
+    const errors = assignmentErrors();
     const shortages = allShortages();
-    $("#coverageWarning").innerHTML = shortages.length
-      ? `<div class="warning neon">Є незакриті місця: ${shortages.reduce((sum, shortage) => sum + shortage.missing, 0)}</div>`
-      : '<div class="total"><b>Початкове призначення укомплектоване.</b></div>';
+    $("#coverageWarning").innerHTML = `${
+      errors.length
+        ? `<div class="warning neon"><b>Помилки призначення:</b><br>${errors.map(esc).join("<br>")}</div>`
+        : '<div class="total"><b>Помилок призначення немає.</b></div>'
+    }${
+      shortages.length
+        ? `<div class="warning" style="margin-top:8px"><b>Нестача людей:</b> ${shortages.reduce((sum, shortage) => sum + shortage.missing, 0)} незакритих місць. Їх буде окремо показано перед формуванням графіка.</div>`
+        : ""
+    }`;
 
     let coverage = "";
     state.points.forEach((point, pointIndex) => {
@@ -1029,7 +1082,7 @@
     let html =
       '<div class="total"><b>Постійні призначення залишаються на своєму пості. Для решти можна задати рівень ротації, частоту, маршрут або ручний пост на кожний день.</b></div>';
 
-    for (let shift = 0; shift < state.shiftsCount; shift += 1) {
+    for (const shift of activeShiftIds()) {
       const rule = normalizeShiftRule(shift);
       const assigned = assignedPointsForShift(shift);
       const rotatable = validPointsForShift(shift);
@@ -1126,6 +1179,12 @@
   function configurationErrors() {
     const errors = [];
     if (!state.startDate) errors.push("Не обрано перший день графіка.");
+    if (!String(state.dutyOfficerName || "").trim()) {
+      errors.push("Не вказано оперативного чергового.");
+    }
+    if (!String(state.dutyOfficerPhone || "").trim()) {
+      errors.push("Не вказано телефон оперативного чергового.");
+    }
     state.points.forEach((point, index) => {
       if (!point.name.trim()) errors.push(`Пост ${index + 1} не має назви.`);
       if (!point.shiftIds.length) {
@@ -1137,6 +1196,7 @@
         );
       }
     });
+    errors.push(...assignmentErrors());
     return errors;
   }
 
@@ -1168,6 +1228,7 @@
     const shortages = allShortages();
 
     $("#review").innerHTML = `<div class="review-line"><b>Період:</b> ${state.startDate}, ${state.daysCount} днів, доба з ${state.dayStart}</div>
+      <div class="review-line"><b>Оперативний черговий:</b> ${esc(state.dutyOfficerName || "не вказано")} · ${esc(state.dutyOfficerPhone || "не вказано")}</div>
       <div class="review-line"><b>Пости:</b> ${state.points
         .map(
           (point) =>
@@ -1191,7 +1252,12 @@
           : ""
       }`;
     $("#buildBtn").disabled = errors.length > 0;
-    if (state.schedule) renderSchedule();
+    if (state.schedule) {
+      renderSchedule();
+    } else {
+      $("#scheduleStats").classList.add("hidden");
+      $("#tableWrap").classList.add("hidden");
+    }
   }
 
   function render() {
@@ -1216,6 +1282,8 @@
       state.startDate = $("#startDate").value;
       state.dayStart = $("#dayStart").value;
       state.daysCount = clamp($("#daysCount").value, 1, 31);
+      state.dutyOfficerName = $("#dutyOfficerName")?.value.trim() || "";
+      state.dutyOfficerPhone = $("#dutyOfficerPhone")?.value.trim() || "";
     }
     if (state.postDraft) {
       const name = $(".draft-point-name");
@@ -1260,6 +1328,20 @@
   function validNext() {
     read();
     if (state.step === 1 && !state.startDate) return "Оберіть перший день.";
+    if (
+      state.step === 1 &&
+      (!state.dutyOfficerName || !state.dutyOfficerPhone)
+    ) {
+      $("#dutyOfficerName")?.classList.toggle(
+        "invalid",
+        !state.dutyOfficerName,
+      );
+      $("#dutyOfficerPhone")?.classList.toggle(
+        "invalid",
+        !state.dutyOfficerPhone,
+      );
+      return "Заповніть дані оперативного чергового.";
+    }
     if (state.step === 2 && state.postDraft) {
       return "Збережіть або скасуйте редагування поста.";
     }
@@ -1280,6 +1362,9 @@
     }
     if (state.step === 3 && !state.peopleConfirmed) {
       return "Підтвердьте список людей.";
+    }
+    if (state.step === 4 && assignmentErrors().length) {
+      return "Виправте помилки призначення, показані на кроці «Перевірка».";
     }
     return "";
   }
@@ -1547,6 +1632,57 @@
     );
   }
 
+  function scheduleStatistics() {
+    const completePeople = state.people.filter(personIsComplete);
+    let assignments = 0;
+    let placeholders = 0;
+    const scheduledPeople = new Set();
+    state.schedule.rows.forEach((row) => {
+      row.cells.forEach((people) => {
+        assignments += people.length;
+        people.forEach((person) => {
+          if (person.placeholder) placeholders += 1;
+          else scheduledPeople.add(person.id);
+        });
+      });
+    });
+    return {
+      required: activeShiftIds().reduce(
+        (sum, shift) => sum + (Number(state.shiftTargets[shift]) || 0),
+        0,
+      ),
+      complete: completePeople.length,
+      reserves: completePeople.filter((person) => person.reserve).length,
+      scheduled: scheduledPeople.size,
+      assignments,
+      placeholders,
+    };
+  }
+
+  function renderScheduleStats() {
+    const stats = scheduleStatistics();
+    const shifts = activeShiftIds()
+      .map((shift) => {
+        const required = Number(state.shiftTargets[shift]) || 0;
+        const complete = state.people.filter(
+          (person) => person.shift === shift && personIsComplete(person),
+        ).length;
+        return `<span class="shift-stat" style="--shift-color:${shiftColor(shift)}"><b>${shiftLabel(shift)}</b>${complete} із ${required}</span>`;
+      })
+      .join("");
+    $("#scheduleStats").innerHTML = `<div class="schedule-stat-grid">
+      <div><span>Резерв</span><b>${stats.reserves}</b></div>
+      <div><span>Потрібно людей</span><b>${stats.required}</b></div>
+      <div><span>Заповнено людей</span><b>${stats.complete}</b></div>
+      <div><span>Задіяно у графіку</span><b>${stats.scheduled}</b></div>
+      <div><span>Усього призначень</span><b>${stats.assignments}</b></div>
+      <div class="${stats.placeholders ? "stat-alert" : ""}"><span>Незаповнених місць</span><b>${stats.placeholders}</b></div>
+    </div>
+    <div class="duty-officer-summary"><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><a href="tel:${esc(state.dutyOfficerPhone.replace(/[^+\d]/g, ""))}">${esc(state.dutyOfficerPhone)}</a></div>
+    <div class="shift-stat-list">${shifts}</div>`;
+    $("#scheduleStats").classList.remove("hidden");
+  }
+
   function renderSchedule() {
     let html =
       '<thead><tr><th>Пост / час</th>' +
@@ -1586,18 +1722,27 @@
     });
 
     $("#scheduleTable").innerHTML = `${html}</tbody>`;
+    renderScheduleStats();
     $("#tableWrap").classList.remove("hidden");
   }
 
-  function printSchedule() {
+  function openPrintView(output = "print") {
     if (!state.schedule) {
       toast("Спочатку сформуйте графік");
       return;
     }
     const printUrl = new URL(location.href);
-    printUrl.search = "?print=1";
+    printUrl.search = `?print=1&output=${output}`;
     const printWindow = window.open(printUrl.toString(), "_blank");
     if (!printWindow) location.href = printUrl.toString();
+  }
+
+  function printSchedule() {
+    openPrintView("print");
+  }
+
+  function exportPdf() {
+    openPrintView("pdf");
   }
 
   function initPrintPage() {
@@ -1606,12 +1751,13 @@
       location.href = location.pathname;
       return;
     }
+    const output = new URLSearchParams(location.search).get("output") || "print";
     state.step = 6;
     render();
     document.body.classList.add("print-page");
     const toolbar = document.createElement("div");
     toolbar.className = "print-toolbar";
-    toolbar.innerHTML = `<button class="btn primary" id="printNowBtn">${uiIcon("printer")}Друк</button><button class="btn" id="closePrintBtn">${uiIcon("x")}Закрити</button>`;
+    toolbar.innerHTML = `${output === "pdf" ? '<span class="print-hint">У вікні друку оберіть «Зберегти як PDF».</span>' : ""}<button class="btn primary" id="printNowBtn">${uiIcon(output === "pdf" ? "fileText" : "printer")}${output === "pdf" ? "Зберегти PDF" : "Друк"}</button><button class="btn" id="closePrintBtn">${uiIcon("x")}Закрити</button>`;
     document.body.prepend(toolbar);
     toolbar.querySelector("#printNowBtn").onclick = () => window.print();
     toolbar.querySelector("#closePrintBtn").onclick = () => {
@@ -1768,7 +1914,16 @@
       toast("Спочатку сформуйте графік");
       return;
     }
+    const stats = scheduleStatistics();
     const rows = [
+      ["Резерв", stats.reserves],
+      ["Оперативний черговий", state.dutyOfficerName],
+      ["Телефон оперативного чергового", state.dutyOfficerPhone],
+      ["Потрібно людей", stats.required],
+      ["Заповнено людей", stats.complete],
+      ["Усього призначень", stats.assignments],
+      ["Незаповнених місць", stats.placeholders],
+      [],
       ["Дата", "Пост", "Початок", "Кінець", "Зміна", "Черговий", "Підрозділ", "Телефон"],
     ];
     state.schedule.rows.forEach((row) => {
@@ -1970,10 +2125,9 @@
       return false;
     }
     state.shiftConfirmed[shift] = true;
-    state.peopleConfirmed = Array.from(
-      { length: state.shiftsCount },
-      (_, index) => Boolean(state.shiftConfirmed[index]),
-    ).every(Boolean);
+    state.peopleConfirmed = activeShiftIds().every((activeShift) =>
+      Boolean(state.shiftConfirmed[activeShift]),
+    );
     render3();
     save();
     toast(missing ? `${shiftLabel(shift)} підтверджено з нестачею` : `${shiftLabel(shift)} підтверджено`);
@@ -1984,7 +2138,8 @@
     read();
     const partial = [];
     const shortages = [];
-    for (let shift = 0; shift < state.shiftsCount; shift += 1) {
+    const activeShifts = activeShiftIds();
+    for (const shift of activeShifts) {
       state.validationAttempted[shift] = true;
       const members = state.people.filter((person) => person.shift === shift);
       if (members.some(personIsPartial)) partial.push(shift);
@@ -2010,10 +2165,10 @@
       save();
       return;
     }
-    for (let shift = 0; shift < state.shiftsCount; shift += 1) {
+    for (const shift of activeShifts) {
       state.shiftConfirmed[shift] = true;
     }
-    state.peopleConfirmed = state.shiftsCount > 0;
+    state.peopleConfirmed = activeShifts.length > 0;
     render3();
     save();
     toast(shortages.length ? "Усі зміни підтверджено з нестачею" : "Усі зміни підтверджено");
@@ -2181,7 +2336,7 @@
         makePerson(
           shift,
           assignedPointsForShift(shift)[0] || 0,
-          state.people.length + 1,
+          true,
         ),
       );
       state.shiftConfirmed[shift] = false;
@@ -2247,6 +2402,12 @@
   });
 
   document.addEventListener("input", (event) => {
+    if (
+      event.target.matches("#dutyOfficerName,#dutyOfficerPhone") &&
+      event.target.value.trim()
+    ) {
+      event.target.classList.remove("invalid");
+    }
     if (event.target.matches(".person-name,.person-phone,.person-unit")) {
       const shift = Number(event.target.dataset.shift);
       state.shiftConfirmed[shift] = false;
@@ -2424,6 +2585,7 @@
 
   $("#buildBtn").onclick = build;
   $("#csvBtn").onclick = excel;
+  $("#pdfBtn").onclick = exportPdf;
   $("#printBtn").onclick = printSchedule;
   $("#resetBtn").onclick = () => {
     if (!confirm("Очистити дані майстра?")) return;
@@ -2441,3 +2603,4 @@
   render();
   initPrintPage();
 })();
+
