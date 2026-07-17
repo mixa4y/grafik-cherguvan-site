@@ -421,6 +421,132 @@ body.post-modal-open {
   gap: 12px;
 }
 
+.post-saved-actions span small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.schedule-stats {
+  margin-top: 15px;
+  padding: 14px 0;
+  border-top: 1px solid #4c546f;
+  border-bottom: 1px solid #4c546f;
+}
+
+.schedule-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(112px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #4c546f;
+  border-radius: 7px;
+  background: #4c546f;
+}
+
+.setup-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.setup-grid > .field:nth-child(-n + 3) {
+  grid-column: span 2;
+}
+
+.setup-grid > .field:nth-child(n + 4) {
+  grid-column: span 3;
+}
+
+.schedule-stat-grid > div {
+  min-height: 72px;
+  padding: 11px 12px;
+  background: #252838;
+}
+
+.schedule-stat-grid span,
+.duty-officer-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.schedule-stat-grid b {
+  display: block;
+  margin-top: 5px;
+  color: var(--accent);
+  font-size: 22px;
+}
+
+.schedule-stat-grid .stat-alert b {
+  color: var(--red);
+}
+
+.duty-officer-summary {
+  display: grid;
+  grid-template-columns: minmax(170px, auto) minmax(180px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #212432;
+  border-left: 4px solid var(--accent);
+}
+
+.duty-officer-summary a {
+  color: var(--accent);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.shift-stat-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.shift-stat {
+  display: flex;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--shift-color) 55%, #4c546f);
+  border-left: 4px solid var(--shift-color);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--shift-color) 7%, #252838);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.shift-stat b {
+  color: var(--shift-color);
+}
+
+.print-hint {
+  margin-right: auto;
+  color: #333;
+  font-size: 12px;
+}
+
+@media print {
+  .schedule-stats,
+  .schedule-stat-grid,
+  .schedule-stat-grid > div,
+  .duty-officer-summary,
+  .shift-stat {
+    background: #fff !important;
+    color: #111 !important;
+    border-color: #777 !important;
+    box-shadow: none !important;
+  }
+
+  .schedule-stat-grid b,
+  .duty-officer-summary a,
+  .shift-stat b {
+    color: #111 !important;
+  }
+}
+
 .saved-posts-head {
   margin-top: 4px;
   padding: 10px 2px 4px;
@@ -641,6 +767,26 @@ body.post-modal-open {
 }
 
 @media (max-width: 800px) {
+  .setup-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .setup-grid > .field:nth-child(n) {
+    grid-column: auto;
+  }
+
+  .schedule-stat-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .duty-officer-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .duty-officer-summary span {
+    grid-column: 1 / -1;
+  }
+
   .shift-rule-grid {
     grid-template-columns: 1fr;
   }
@@ -670,6 +816,18 @@ body.post-modal-open {
 }
 
 @media (max-width: 590px) {
+  .setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .duty-officer-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .duty-officer-summary span {
+    grid-column: auto;
+  }
+
   .post-editor-modal {
     padding: 8px;
   }
@@ -721,3 +879,4 @@ body.post-modal-open {
     grid-row: 1;
   }
 }
+
