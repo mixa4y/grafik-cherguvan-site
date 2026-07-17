@@ -30,6 +30,24 @@
     return Math.max(min, Math.min(max, Number.isFinite(number) ? number : min));
   }
 
+  function formatUkrainianPhone(value) {
+    const source = String(value || "").trim();
+    if (!source || source === DEFAULT_PHONE) return "";
+
+    let digits = source.replace(/\D/g, "");
+    if (digits.startsWith("380")) digits = digits.slice(3);
+    if (digits.startsWith("0")) digits = digits.slice(1);
+    if (digits.length > 9) digits = digits.slice(-9);
+
+    const groups = [
+      digits.slice(0, 2),
+      digits.slice(2, 5),
+      digits.slice(5, 7),
+      digits.slice(7, 9),
+    ].filter(Boolean);
+    return groups.length ? `+380 ${groups.join(" ")}` : "+380";
+  }
+
   function makeRotation() {
     return { mode: "rotate" };
   }
@@ -264,8 +282,9 @@
   }
 
   function personPhoneProvided(person) {
-    const value = String(person?.phone || "").trim();
-    return Boolean(value && value !== DEFAULT_PHONE);
+    return /^\+380 \d{2} \d{3} \d{2} \d{2}$/.test(
+      formatUkrainianPhone(person?.phone),
+    );
   }
 
   function applyFieldDefaults() {
@@ -506,6 +525,7 @@
   }
 
   function normalize() {
+    state.dutyOfficerPhone = formatUkrainianPhone(state.dutyOfficerPhone);
     state.startDate = /^\d{4}-\d{2}-\d{2}$/.test(state.startDate)
       ? state.startDate
       : today();
@@ -600,7 +620,7 @@
         person.shift = shift;
         person.reserve = memberIndex >= target;
         person.name = person.name || "";
-        person.phone = person.phone || "";
+        person.phone = formatUkrainianPhone(person.phone);
         person.unit = person.unit || "";
         person.point = clamp(person.point, 0, Math.max(0, state.points.length - 1));
         if (validPoints.length && !validPoints.includes(person.point)) {
@@ -935,7 +955,7 @@
                 <div class="num">${memberIndex + 1}</div>
                 <div class="field unit" data-help="Введіть підрозділ. Текст-підказка зникне автоматично, щойно ви почнете вводити."><label>Підрозділ *</label><input class="control person-unit ${showMissing && !personUnitProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.unit)}" placeholder="Введіть підрозділ"></div>
                 <div class="field" data-help="Введіть прізвище та ініціали. Підказку не потрібно стирати."><label>Прізвище та ініціали *</label><input class="control person-name ${showMissing && !personNameProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.name)}" placeholder="Черговий ${memberIndex + 1}: прізвище та ініціали"></div>
-                <div class="field phone" data-help="Введіть контактний номер. Підказка автоматично заміниться введеним текстом."><label>Телефон *</label><input class="control person-phone ${showMissing && !personPhoneProvided(person) ? "invalid" : ""}" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
+                <div class="field phone" data-help="Номер автоматично відобразиться у форматі +380 00 000 00 00."><label>Телефон *</label><input class="control person-phone ${showMissing && !personPhoneProvided(person) ? "invalid" : ""}" type="tel" inputmode="tel" data-i="${person.index}" data-shift="${shift}" value="${esc(person.phone)}" placeholder="+380 00 000 00 00"></div>
                 <button class="icon remove-person" data-remove-person="${person.index}" title="${requiredRow ? "Цей рядок створено за розрахованою потребою" : "Видалити додаткову людину"}" aria-label="${requiredRow ? "Обов'язковий рядок" : "Видалити додаткову людину"}" ${requiredRow ? "disabled" : ""}>${uiIcon("x")}</button>
               </div>`;
             },
@@ -1182,7 +1202,7 @@
     if (!String(state.dutyOfficerName || "").trim()) {
       errors.push("Не вказано оперативного чергового.");
     }
-    if (!String(state.dutyOfficerPhone || "").trim()) {
+    if (!personPhoneProvided({ phone: state.dutyOfficerPhone })) {
       errors.push("Не вказано телефон оперативного чергового.");
     }
     state.points.forEach((point, index) => {
@@ -1283,7 +1303,9 @@
       state.dayStart = $("#dayStart").value;
       state.daysCount = clamp($("#daysCount").value, 1, 31);
       state.dutyOfficerName = $("#dutyOfficerName")?.value.trim() || "";
-      state.dutyOfficerPhone = $("#dutyOfficerPhone")?.value.trim() || "";
+      state.dutyOfficerPhone = formatUkrainianPhone(
+        $("#dutyOfficerPhone")?.value,
+      );
     }
     if (state.postDraft) {
       const name = $(".draft-point-name");
@@ -1317,7 +1339,9 @@
       state.people[element.dataset.i].name = element.value.trim();
     });
     $$(".person-phone").forEach((element) => {
-      state.people[element.dataset.i].phone = element.value.trim();
+      state.people[element.dataset.i].phone = formatUkrainianPhone(
+        element.value,
+      );
     });
     $$(".person-unit").forEach((element) => {
       state.people[element.dataset.i].unit = element.value.trim();
@@ -1328,19 +1352,19 @@
   function validNext() {
     read();
     if (state.step === 1 && !state.startDate) return "Оберіть перший день.";
-    if (
-      state.step === 1 &&
-      (!state.dutyOfficerName || !state.dutyOfficerPhone)
-    ) {
+    const officerPhoneComplete = personPhoneProvided({
+      phone: state.dutyOfficerPhone,
+    });
+    if (state.step === 1 && (!state.dutyOfficerName || !officerPhoneComplete)) {
       $("#dutyOfficerName")?.classList.toggle(
         "invalid",
         !state.dutyOfficerName,
       );
       $("#dutyOfficerPhone")?.classList.toggle(
         "invalid",
-        !state.dutyOfficerPhone,
+        !officerPhoneComplete,
       );
-      return "Заповніть дані оперативного чергового.";
+      return "Заповніть дані та повний номер оперативного чергового.";
     }
     if (state.step === 2 && state.postDraft) {
       return "Збережіть або скасуйте редагування поста.";
@@ -2418,6 +2442,18 @@
     if (event.target.matches(".draft-point-name") && event.target.value.trim()) {
       event.target.classList.remove("invalid");
     }
+    read();
+    save();
+  });
+
+  document.addEventListener("focusout", (event) => {
+    if (!event.target.matches("#dutyOfficerPhone,.person-phone")) return;
+    event.target.value = formatUkrainianPhone(event.target.value);
+    event.target.classList.toggle(
+      "invalid",
+      Boolean(event.target.value) &&
+        !personPhoneProvided({ phone: event.target.value }),
+    );
     read();
     save();
   });
