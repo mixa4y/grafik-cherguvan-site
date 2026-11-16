@@ -66,6 +66,7 @@
     return {
       name: `Пост ${index + 1}`,
       startDate: "",
+      endDate: "",
       dayStart: "",
       duration: 4,
       shiftMode: "alternate",
@@ -117,6 +118,7 @@
     assignmentMode: "auto",
     hybridEdited: false,
     shortageMode: "placeholders",
+    reportType: "full",
     schedule: null,
     fieldDefaultsVersion: FIELD_DEFAULTS_VERSION,
   };
@@ -176,6 +178,7 @@
       ? source.assignmentMode
       : "auto";
     next.hybridEdited = Boolean(source.hybridEdited);
+    next.reportType = source.reportType === "weekly" ? "weekly" : "full";
     next.fieldDefaultsVersion = Number(source.fieldDefaultsVersion) || 0;
     if (fromLegacy) {
       next.schedule = null;
@@ -523,6 +526,9 @@
     target.startDate = /^\d{4}-\d{2}-\d{2}$/.test(target.startDate)
       ? target.startDate
       : state.startDate || today();
+    target.endDate = /^\d{4}-\d{2}-\d{2}$/.test(target.endDate)
+      ? target.endDate
+      : "";
     target.dayStart = /^\d{2}:\d{2}$/.test(target.dayStart)
       ? target.dayStart
       : state.dayStart || "08:00";
@@ -850,7 +856,7 @@
       state.points.forEach((point) => {
         if (!point.shiftIds.length) return;
         const pointDay = pointDayIndex(point, day);
-        if (pointDay < 0) return;
+        if (!pointIsActive(point, day)) return;
         const intervals = activeIntervals(point);
         const dailySlots = baseIntervals(point).length;
         intervals.forEach((interval) => {
@@ -933,7 +939,7 @@
       $("#postEditor").innerHTML = `<div class="post-editor-modal" role="presentation">
         <div class="card post-editor-card" role="dialog" aria-modal="true" aria-labelledby="postEditorTitle">
         <div class="card-head modal-card-head"><div><h3 id="postEditorTitle">${state.editingPoint === null ? "Новий пост" : `Редагування поста ${state.editingPoint + 1}`}</h3><div class="preview">Початкові значення взято з Кроку 1. Для цього поста їх можна змінити.</div></div><button class="icon modal-close" id="closePostEditor" title="Закрити редактор" aria-label="Закрити редактор">${uiIcon("x")}</button></div>
-        <div class="inherited-period"><div class="field" data-help="Дата автоматично підтягується з Кроку 1, але може бути змінена для цього поста."><label>Дата початку поста</label><input class="control draft-start-date" type="date" min="${esc(state.startDate)}" max="${dateInputValueAt(state.daysCount - 1)}" value="${esc(draft.startDate)}"></div><div class="field" data-help="Початок розрахункової доби цього поста. Від нього будуються проміжки чергування."><label>Початок доби поста</label><input class="control draft-day-start" type="time" value="${esc(draft.dayStart)}"></div></div>
+        <div class="inherited-period"><div class="field" data-help="Дата автоматично підтягується з Кроку 1, але може бути змінена для цього поста."><label>Дата початку поста</label><input class="control draft-start-date" type="date" min="${esc(state.startDate)}" max="${dateInputValueAt(state.daysCount - 1)}" value="${esc(draft.startDate)}"></div><div class="field" data-help="Останній день роботи поста включно. Порожнє поле означає роботу до кінця графіка."><label>Дата завершення поста</label><input class="control draft-end-date" type="date" min="${esc(draft.startDate)}" max="${dateInputValueAt(state.daysCount - 1)}" value="${esc(draft.endDate || "")}"></div><div class="field" data-help="Початок розрахункової доби цього поста. Від нього будуються проміжки чергування."><label>Початок доби поста</label><input class="control draft-day-start" type="time" value="${esc(draft.dayStart)}"></div></div>
         <div class="post-editor-grid">
           <div class="field" data-help="Обов’язкова зрозуміла назва, наприклад «КПП» або «Кухня»."><label>Назва поста *</label><input class="control draft-point-name" value="${esc(draft.name)}" placeholder="Введіть назву поста"></div>
           <div class="field" data-help="Загальна кількість людей для поста. Вона розподіляється між обраними змінами."><label>Загалом людей для поста *</label><input class="control draft-people-required" type="number" min="${Math.max(1, draft.shiftIds.length)}" max="${MAX_PEOPLE_PER_SHIFT}" value="${draft.peopleRequired}"></div>
@@ -950,7 +956,7 @@
 
     const saved = state.points
       .map((point, pointIndex) => `<div class="saved-post-row">
-        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift, slot) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}<span class="shift-headcount">${point.requirements[slot]} ${plural(point.requirements[slot], "людина", "людини", "людей")}</span></span>`).join("")}</span><span class="post-meta-item">${uiIcon("clock")}<b>${point.startDate} · ${point.dayStart} · ${point.duration} год</b></span></div></div>
+        <div class="saved-post-main"><strong>${pointIndex + 1}. ${esc(point.name)}</strong><div class="saved-post-meta"><span class="saved-post-shifts">${point.shiftIds.map((shift, slot) => `<span class="post-shift-tag" style="--shift-color:${shiftColor(shift)}">${shiftLabel(shift)}<span class="shift-headcount">${point.requirements[slot]} ${plural(point.requirements[slot], "людина", "людини", "людей")}</span></span>`).join("")}</span><span class="post-meta-item">${uiIcon("clock")}<b>${point.startDate} — ${point.endDate || "кінець графіка"} · ${point.dayStart} · ${point.duration} год</b></span></div></div>
         <div class="saved-post-buttons"><button class="btn" data-edit-post="${pointIndex}">Редагувати</button><button class="btn" data-duplicate-post="${pointIndex}">Дублювати</button><button class="icon" data-delete-post="${pointIndex}" title="Видалити пост" aria-label="Видалити пост">${uiIcon("trash")}</button></div>
       </div>`)
       .join("");
@@ -1127,6 +1133,11 @@
     );
   }
 
+  function pointIsActive(point, scheduleDay) {
+    return pointDayIndex(point, scheduleDay) >= 0 &&
+      (!point.endDate || dateSerial(dateInputValueAt(scheduleDay)) <= dateSerial(point.endDate));
+  }
+
   function dayLabel(index) {
     return new Intl.DateTimeFormat("uk-UA", {
       weekday: "short",
@@ -1262,6 +1273,9 @@
           `${point.name || `Пост ${index + 1}`} починається після завершення графіка.`,
         );
       }
+      if (point.endDate && (dateSerial(point.endDate) < dateSerial(point.startDate) || dateSerial(point.endDate) < dateSerial(state.startDate))) {
+        errors.push(`${point.name} має дату завершення раніше початку роботи.`);
+      }
     });
     errors.push(...assignmentErrors());
     return errors;
@@ -1322,8 +1336,10 @@
     if (state.schedule) {
       renderSchedule();
     } else {
+      $("#reportOptions").classList.add("hidden");
       $("#scheduleStats").classList.add("hidden");
       $("#tableWrap").classList.add("hidden");
+      $("#weeklyReports").classList.add("hidden");
     }
   }
 
@@ -1357,11 +1373,13 @@
     if (state.postDraft) {
       const name = $(".draft-point-name");
       const startDate = $(".draft-start-date");
+      const endDate = $(".draft-end-date");
       const dayStart = $(".draft-day-start");
       const duration = $(".draft-duration");
       const peopleRequired = $(".draft-people-required");
       if (name) state.postDraft.name = name.value.trim();
       if (startDate) state.postDraft.startDate = startDate.value || state.startDate;
+      if (endDate) state.postDraft.endDate = endDate.value;
       if (dayStart) state.postDraft.dayStart = dayStart.value || state.dayStart;
       if (duration) state.postDraft.duration = Number(duration.value);
       if (peopleRequired) {
@@ -1430,6 +1448,9 @@
       state.points.some((point) => pointDayIndex(point, state.daysCount - 1) < 0)
     ) {
       return "Дата початку поста має входити у період графіка.";
+    }
+    if (state.step === 2 && state.points.some((point) => point.endDate && dateSerial(point.endDate) < dateSerial(point.startDate))) {
+      return "Дата завершення поста має бути не раніше початку.";
     }
     if (state.step === 3 && !state.peopleConfirmed) {
       return "Підтвердьте список людей.";
@@ -1603,7 +1624,7 @@
 
         for (let day = 0; day < state.daysCount; day += 1) {
           const pointDay = pointDayIndex(point, day);
-          if (pointDay < 0) {
+          if (!pointIsActive(point, day)) {
             row.shifts.push(null);
             row.needs.push(0);
             row.cells.push([]);
@@ -1889,19 +1910,29 @@
     $("#scheduleStats").classList.remove("hidden");
   }
 
-  function renderSchedule() {
+  function calendarWeeks() {
+    const weeks = [];
+    for (let day = 0; day < state.daysCount; day += 1) {
+      const date = dateAt(day);
+      // Monday starts a new calendar week, including when the period crosses a year.
+      if (!weeks.length || date.getDay() === 1) weeks.push([]);
+      weeks[weeks.length - 1].push(day);
+    }
+    return weeks;
+  }
+
+  function scheduleTableHtml(days) {
     let html =
       '<thead><tr><th>Пост / час</th>' +
-      Array.from(
-        { length: state.daysCount },
-        (_, day) =>
+      days.map(
+        (day) =>
           `<th>День ${day + 1}<br><small>${dayLabel(day)}</small></th>`,
       ).join("") +
       "</tr></thead><tbody>";
 
     state.schedule.rows.forEach((row) => {
       const shifts = row.shifts || row.cells.map(() => row.shift);
-      const unique = [...new Set(shifts.filter((shift) => Number.isInteger(shift)))];
+      const unique = [...new Set(days.map((day) => shifts[day]).filter((shift) => Number.isInteger(shift)))];
       const shiftSummary =
         unique.length === 0
           ? "ще не працює"
@@ -1909,13 +1940,14 @@
             ? `зміна ${unique[0] + 1}`
             : "зміни по днях";
       const point = state.points[row.point];
-      const startNote = point.startDate !== state.startDate ? ` · з ${point.startDate}` : "";
-      html += `<tr><td class="slot"><b>${esc(point.name)}</b><small>${row.start}–${row.end} · ${shiftSummary}${startNote}</small></td>${row.cells
+      const startNote = `${point.startDate !== state.startDate ? ` · з ${point.startDate}` : ""}${point.endDate ? ` · до ${point.endDate}` : ""}`;
+      html += `<tr><td class="slot"><b>${esc(point.name)}</b><small>${row.start}–${row.end} · ${shiftSummary}${startNote}</small></td>${days
         .map(
-          (people, day) => {
+          (day) => {
+            const people = row.cells[day] || [];
             const shift = shifts[day];
             if (!Number.isInteger(shift)) {
-              return `<td class="schedule-inactive"><span>Пост ще не працює</span></td>`;
+              return `<td class="schedule-inactive"><span>${pointDayIndex(point, day) < 0 ? "Пост ще не працює" : "Пост завершив роботу"}</span></td>`;
             }
             return `<td class="schedule-shift-cell ${row.conflict[day] || people.some((person) => person.placeholder) ? "neon" : ""}" style="--shift-color:${shiftColor(shift)}">
               <span class="day-shift">${shiftLabel(shift)}</span>
@@ -1927,9 +1959,48 @@
         .join("")}</tr>`;
     });
 
-    $("#scheduleTable").innerHTML = `${html}</tbody>`;
-    renderScheduleStats();
-    $("#tableWrap").classList.remove("hidden");
+    return `${html}</tbody>`;
+  }
+
+  function weeklySummary(days) {
+    const people = new Set();
+    let assignments = 0;
+    let minutes = 0;
+    let missing = 0;
+    let conflicts = 0;
+    state.schedule.rows.forEach((row) => {
+      let duration = mins(row.end) - mins(row.start);
+      if (duration <= 0) duration += 1440;
+      days.forEach((day) => {
+        if (row.conflict?.[day]) conflicts += 1;
+        (row.cells[day] || []).forEach((person) => {
+          assignments += 1;
+          if (person.placeholder) missing += 1;
+          else {
+            people.add(person.id);
+            minutes += duration;
+          }
+        });
+      });
+    });
+    return `<div class="week-summary"><span>Людей: <b>${people.size}</b></span><span>Призначень: <b>${assignments}</b></span><span>Годин: <b>${statisticHours(minutes)}</b></span><span>Незаповнених місць: <b>${missing}</b></span><span>Конфліктів: <b>${conflicts}</b></span></div>`;
+  }
+
+  function renderSchedule() {
+    const weekly = state.reportType === "weekly";
+    $("#reportType").value = weekly ? "weekly" : "full";
+    $("#reportOptions").classList.remove("hidden");
+    $("#scheduleStats").classList.toggle("hidden", weekly);
+    $("#tableWrap").classList.toggle("hidden", weekly);
+    $("#weeklyReports").classList.toggle("hidden", !weekly);
+    if (weekly) {
+      $("#weeklyReports").innerHTML = calendarWeeks().map((days, index) =>
+        `<section class="weekly-report"><h3>Тиждень ${index + 1} · ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}</h3>${weeklySummary(days)}<div class="table-wrap"><table class="schedule">${scheduleTableHtml(days)}</table></div></section>`,
+      ).join("");
+    } else {
+      $("#scheduleTable").innerHTML = scheduleTableHtml(Array.from({ length: state.daysCount }, (_, day) => day));
+      renderScheduleStats();
+    }
   }
 
   function openPrintView(output = "print") {
@@ -1965,7 +2036,7 @@
 
     const documentHeader = document.createElement("header");
     documentHeader.className = "print-document-head";
-    documentHeader.innerHTML = `<div><h1>Графік чергувань</h1><p>${dateAt(0).toLocaleDateString("uk-UA")} — ${dateAt(state.daysCount - 1).toLocaleDateString("uk-UA")} · службова доба з ${esc(state.dayStart)}</p></div><div><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><span>${esc(state.dutyOfficerPhone)}</span></div>`;
+    documentHeader.innerHTML = `<div><h1>${state.reportType === "weekly" ? "Потижневий звіт чергувань" : "Графік чергувань"}</h1><p>${dateAt(0).toLocaleDateString("uk-UA")} — ${dateAt(state.daysCount - 1).toLocaleDateString("uk-UA")} · службова доба з ${esc(state.dayStart)}</p></div><div><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><span>${esc(state.dutyOfficerPhone)}</span></div>`;
     $("#step6").prepend(documentHeader);
 
     const toolbar = document.createElement("div");
@@ -2129,29 +2200,35 @@
     }
     const stats = scheduleStatistics();
     const rows = [
-      ["Резерв", stats.reserves],
+      ["Тип звіту", state.reportType === "weekly" ? "Потижневий" : "Увесь період"],
       ["Оперативний черговий", state.dutyOfficerName],
       ["Телефон оперативного чергового", state.dutyOfficerPhone],
-      ["Потрібно людей", stats.required],
-      ["Заповнено людей", stats.complete],
+      ["Задіяно людей", stats.scheduled],
       ["Усього призначень", stats.assignments],
       ["Незаповнених місць", stats.placeholders],
       [],
-      ["Дата", "Пост", "Початок", "Кінець", "Зміна", "Черговий", "Підрозділ", "Телефон"],
     ];
-    state.schedule.rows.forEach((row) => {
-      row.cells.forEach((people, day) => {
-        people.forEach((person) => {
-          rows.push([
-            dateAt(day).toLocaleDateString("uk-UA"),
-            state.points[row.point].name,
-            row.start,
-            row.end,
-            (row.shifts?.[day] ?? row.shift) + 1,
-            person.name,
-            person.unit || "",
-            person.phone || "",
-          ]);
+    const weekly = state.reportType === "weekly";
+    rows.push([...(weekly ? ["Тиждень"] : []), "Дата", "Пост", "Початок", "Кінець", "Зміна", "Черговий", "Підрозділ", "Телефон"]);
+    const weeks = weekly ? calendarWeeks() : [Array.from({ length: state.daysCount }, (_, day) => day)];
+    weeks.forEach((days, index) => {
+      if (weekly) rows.push([`Тиждень ${index + 1}: ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}`]);
+      state.schedule.rows.forEach((row) => {
+        days.forEach((day) => {
+          const people = row.cells[day] || [];
+          people.forEach((person) => {
+            rows.push([
+              ...(weekly ? [index + 1] : []),
+              dateAt(day).toLocaleDateString("uk-UA"),
+              state.points[row.point].name,
+              row.start,
+              row.end,
+              (row.shifts?.[day] ?? row.shift) + 1,
+              person.name,
+              person.unit || "",
+              person.phone || "",
+            ]);
+          });
         });
       });
     });
@@ -2176,7 +2253,7 @@
       ["xl/worksheets/sheet1.xml", xlsxSheet(rows)],
     ];
     const blob = makeXlsx(entries);
-    const filename = `grafik-cherguvan-${state.startDate}.xlsx`;
+    const filename = `${weekly ? "potyzhnevyi-zvit" : "grafik-cherguvan"}-${state.startDate}.xlsx`;
 
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -2242,6 +2319,11 @@
     }
     if (!draft.shiftIds.length) {
       toast("Додайте щонайменше одну зміну на пост.");
+      return;
+    }
+    if (draft.endDate && (dateSerial(draft.endDate) < dateSerial(draft.startDate) || dateSerial(draft.endDate) > dateSerial(dateInputValueAt(state.daysCount - 1)))) {
+      $(".draft-end-date")?.classList.add("invalid");
+      toast("Дата завершення поста має входити у період графіка та бути не раніше початку.");
       return;
     }
     const duplicateName = state.points.some(
@@ -2677,7 +2759,7 @@
 
     if (
       target.matches(
-        ".draft-duration,.draft-people-required,.draft-start-date,.draft-day-start",
+        ".draft-duration,.draft-people-required,.draft-start-date,.draft-end-date,.draft-day-start",
       )
     ) {
       read();
@@ -2807,6 +2889,11 @@
   };
 
   $("#buildBtn").onclick = build;
+  $("#reportType").addEventListener("change", (event) => {
+    state.reportType = event.target.value === "weekly" ? "weekly" : "full";
+    save();
+    if (state.schedule) renderSchedule();
+  });
   $("#csvBtn").onclick = excel;
   $("#pdfBtn").onclick = exportPdf;
   $("#printBtn").onclick = printSchedule;
