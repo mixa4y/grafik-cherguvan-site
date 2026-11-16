@@ -1921,16 +1921,22 @@
     return weeks;
   }
 
-  function scheduleTableHtml(days) {
+  function scheduleTableHtml(days, compact = false) {
     let html =
-      '<thead><tr><th>Пост / час</th>' +
+      `<thead><tr><th scope="col">${compact ? "Пост / зміна" : "Пост / час"}</th>` +
       days.map(
         (day) =>
-          `<th>День ${day + 1}<br><small>${dayLabel(day)}</small></th>`,
+          compact
+            ? `<th scope="col" class="week-day-head"><b>${esc(new Intl.DateTimeFormat("uk-UA", { weekday: "short" }).format(dateAt(day)))}</b><small>${dateAt(day).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}</small></th>`
+            : `<th scope="col">День ${day + 1}<br><small>${dayLabel(day)}</small></th>`,
       ).join("") +
       "</tr></thead><tbody>";
 
-    state.schedule.rows.forEach((row) => {
+    const rows = compact
+      ? state.schedule.rows.filter((row) => days.some((day) => Number.isInteger(row.shifts ? row.shifts[day] : row.shift)))
+      : state.schedule.rows;
+    let previousPoint = null;
+    rows.forEach((row) => {
       const shifts = row.shifts || row.cells.map(() => row.shift);
       const unique = [...new Set(days.map((day) => shifts[day]).filter((shift) => Number.isInteger(shift)))];
       const shiftSummary =
@@ -1941,13 +1947,18 @@
             : "зміни по днях";
       const point = state.points[row.point];
       const startNote = `${point.startDate !== state.startDate ? ` · з ${point.startDate}` : ""}${point.endDate ? ` · до ${point.endDate}` : ""}`;
-      html += `<tr><td class="slot"><b>${esc(point.name)}</b><small>${row.start}–${row.end} · ${shiftSummary}${startNote}</small></td>${days
+      const postStart = compact && previousPoint !== row.point;
+      previousPoint = row.point;
+      html += `<tr class="${postStart ? "week-post-start" : ""}"><td class="slot"><b>${esc(point.name)}</b><small>${row.start}–${row.end} · ${shiftSummary}${startNote}</small></td>${days
         .map(
           (day) => {
             const people = row.cells[day] || [];
             const shift = shifts[day];
             if (!Number.isInteger(shift)) {
-              return `<td class="schedule-inactive"><span>${pointDayIndex(point, day) < 0 ? "Пост ще не працює" : "Пост завершив роботу"}</span></td>`;
+              const reason = pointDayIndex(point, day) < 0 ? "Пост ще не працює" : "Пост завершив роботу";
+              return compact
+                ? `<td class="schedule-inactive week-inactive" title="${reason}" aria-label="${reason}">—</td>`
+                : `<td class="schedule-inactive"><span>${reason}</span></td>`;
             }
             return `<td class="schedule-shift-cell ${row.conflict[day] || people.some((person) => person.placeholder) ? "neon" : ""}" style="--shift-color:${shiftColor(shift)}">
               <span class="day-shift">${shiftLabel(shift)}</span>
@@ -1959,7 +1970,14 @@
         .join("")}</tr>`;
     });
 
-    return `${html}</tbody>`;
+    if (compact && !rows.length) html += `<tr><td colspan="${days.length + 1}" class="week-empty">У ці дні жоден пост не працює.</td></tr>`;
+    html += "</tbody>";
+    if (compact) {
+      const totals = days.map((day) => state.schedule.rows.reduce((sum, row) => sum + (row.cells[day]?.length || 0), 0));
+      const missing = days.map((day) => state.schedule.rows.reduce((sum, row) => sum + (row.cells[day] || []).filter((person) => person.placeholder).length, 0));
+      html += `<tfoot><tr class="week-totals"><th scope="row">Призначень</th>${totals.map((count) => `<td>${count}</td>`).join("")}</tr><tr class="week-totals"><th scope="row">Незаповнених місць</th>${missing.map((count) => `<td class="${count ? "week-missing" : ""}">${count}</td>`).join("")}</tr></tfoot>`;
+    }
+    return html;
   }
 
   function weeklySummary(days) {
@@ -2010,7 +2028,7 @@
 
   function sevenDayReportsHtml() {
     return calendarWeeks().map((days, index) =>
-      `<section class="weekly-report"><h3>Дні ${days[0] + 1}–${days[days.length - 1] + 1} · ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}</h3>${weeklySummary(days)}<div class="table-wrap"><table class="schedule">${scheduleTableHtml(days)}</table></div></section>`,
+      `<section class="weekly-report"><div class="week-report-head"><h3>Блок ${index + 1} · ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}</h3><span>Дні ${days[0] + 1}–${days[days.length - 1] + 1} · ${days.length} ${plural(days.length, "день", "дні", "днів")}</span></div>${weeklySummary(days)}<p class="week-legend">— пост не працює цього дня</p><div class="table-wrap"><table class="schedule week-schedule" aria-label="Графік чергувань за дні ${days[0] + 1}–${days[days.length - 1] + 1}">${scheduleTableHtml(days, true)}</table></div></section>`,
     ).join("");
   }
 
@@ -2227,10 +2245,10 @@
       [],
     ];
     const weekly = state.reportType === "weekly";
-    rows.push([...(weekly ? ["Тиждень"] : []), "Дата", "Пост", "Початок", "Кінець", "Зміна", "Черговий", "Підрозділ", "Телефон"]);
+    rows.push([...(weekly ? ["Блок 7 днів"] : []), "Дата", "Пост", "Початок", "Кінець", "Зміна", "Черговий", "Підрозділ", "Телефон"]);
     const weeks = weekly ? calendarWeeks() : [state.reportType === "daily" ? [state.reportDay] : Array.from({ length: state.daysCount }, (_, day) => day)];
     weeks.forEach((days, index) => {
-      if (weekly) rows.push([`Тиждень ${index + 1}: ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}`]);
+      if (weekly) rows.push([`Блок ${index + 1}: ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}`]);
       state.schedule.rows.forEach((row) => {
         days.forEach((day) => {
           const people = row.cells[day] || [];
