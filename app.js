@@ -119,6 +119,7 @@
     hybridEdited: false,
     shortageMode: "placeholders",
     reportType: "full",
+    reportDay: 0,
     schedule: null,
     fieldDefaultsVersion: FIELD_DEFAULTS_VERSION,
   };
@@ -178,7 +179,8 @@
       ? source.assignmentMode
       : "auto";
     next.hybridEdited = Boolean(source.hybridEdited);
-    next.reportType = source.reportType === "weekly" ? "weekly" : "full";
+    next.reportType = ["weekly", "daily"].includes(source.reportType) ? source.reportType : "full";
+    next.reportDay = clamp(source.reportDay ?? 0, 0, Math.max(0, Number(next.daysCount) - 1));
     next.fieldDefaultsVersion = Number(source.fieldDefaultsVersion) || 0;
     if (fromLegacy) {
       next.schedule = null;
@@ -1913,9 +1915,7 @@
   function calendarWeeks() {
     const weeks = [];
     for (let day = 0; day < state.daysCount; day += 1) {
-      const date = dateAt(day);
-      // Monday starts a new calendar week, including when the period crosses a year.
-      if (!weeks.length || date.getDay() === 1) weeks.push([]);
+      if (day % 7 === 0) weeks.push([]);
       weeks[weeks.length - 1].push(day);
     }
     return weeks;
@@ -1988,19 +1988,30 @@
 
   function renderSchedule() {
     const weekly = state.reportType === "weekly";
-    $("#reportType").value = weekly ? "weekly" : "full";
+    const daily = state.reportType === "daily";
+    state.reportDay = clamp(state.reportDay, 0, Math.max(0, state.daysCount - 1));
+    $("#reportType").value = state.reportType;
     $("#reportOptions").classList.remove("hidden");
-    $("#scheduleStats").classList.toggle("hidden", weekly);
+    $("#reportDayNav").classList.toggle("hidden", !daily);
+    $("#reportDayLabel").textContent = `День ${state.reportDay + 1} · ${dayLabel(state.reportDay)}`;
+    $("#previousReportDay").disabled = state.reportDay === 0;
+    $("#nextReportDay").disabled = state.reportDay === state.daysCount - 1;
+    $("#scheduleStats").classList.toggle("hidden", weekly || daily);
     $("#tableWrap").classList.toggle("hidden", weekly);
     $("#weeklyReports").classList.toggle("hidden", !weekly);
     if (weekly) {
-      $("#weeklyReports").innerHTML = calendarWeeks().map((days, index) =>
-        `<section class="weekly-report"><h3>Тиждень ${index + 1} · ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}</h3>${weeklySummary(days)}<div class="table-wrap"><table class="schedule">${scheduleTableHtml(days)}</table></div></section>`,
-      ).join("");
+      $("#weeklyReports").innerHTML = sevenDayReportsHtml();
     } else {
-      $("#scheduleTable").innerHTML = scheduleTableHtml(Array.from({ length: state.daysCount }, (_, day) => day));
-      renderScheduleStats();
+      const days = daily ? [state.reportDay] : Array.from({ length: state.daysCount }, (_, day) => day);
+      $("#scheduleTable").innerHTML = scheduleTableHtml(days);
+      if (!daily) renderScheduleStats();
     }
+  }
+
+  function sevenDayReportsHtml() {
+    return calendarWeeks().map((days, index) =>
+      `<section class="weekly-report"><h3>Дні ${days[0] + 1}–${days[days.length - 1] + 1} · ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}</h3>${weeklySummary(days)}<div class="table-wrap"><table class="schedule">${scheduleTableHtml(days)}</table></div></section>`,
+    ).join("");
   }
 
   function openPrintView(output = "print") {
@@ -2033,10 +2044,17 @@
     render();
     document.body.classList.add("print-page");
     if (output === "pdf") document.body.classList.add("pdf-page");
+    if (state.reportType === "full") {
+      // Keep the full table on screen, but paginate long periods into seven-day print sheets.
+      $("#weeklyReports").innerHTML = sevenDayReportsHtml();
+      $("#weeklyReports").classList.remove("hidden");
+      $("#tableWrap").classList.add("hidden");
+      $("#scheduleStats").classList.add("hidden");
+    }
 
     const documentHeader = document.createElement("header");
     documentHeader.className = "print-document-head";
-    documentHeader.innerHTML = `<div><h1>${state.reportType === "weekly" ? "Потижневий звіт чергувань" : "Графік чергувань"}</h1><p>${dateAt(0).toLocaleDateString("uk-UA")} — ${dateAt(state.daysCount - 1).toLocaleDateString("uk-UA")} · службова доба з ${esc(state.dayStart)}</p></div><div><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><span>${esc(state.dutyOfficerPhone)}</span></div>`;
+    documentHeader.innerHTML = `<div><h1>${state.reportType === "weekly" ? "Звіт чергувань по 7 днів" : state.reportType === "daily" ? "Графік чергувань за день" : "Графік чергувань"}</h1><p>${state.reportType === "daily" ? dateAt(state.reportDay).toLocaleDateString("uk-UA") : `${dateAt(0).toLocaleDateString("uk-UA")} — ${dateAt(state.daysCount - 1).toLocaleDateString("uk-UA")}`} · службова доба з ${esc(state.dayStart)}</p></div><div><span>Оперативний черговий</span><b>${esc(state.dutyOfficerName)}</b><span>${esc(state.dutyOfficerPhone)}</span></div>`;
     $("#step6").prepend(documentHeader);
 
     const toolbar = document.createElement("div");
@@ -2200,7 +2218,7 @@
     }
     const stats = scheduleStatistics();
     const rows = [
-      ["Тип звіту", state.reportType === "weekly" ? "Потижневий" : "Увесь період"],
+      ["Тип звіту", state.reportType === "weekly" ? "По 7 днів" : state.reportType === "daily" ? "Один день" : "Увесь період"],
       ["Оперативний черговий", state.dutyOfficerName],
       ["Телефон оперативного чергового", state.dutyOfficerPhone],
       ["Задіяно людей", stats.scheduled],
@@ -2210,7 +2228,7 @@
     ];
     const weekly = state.reportType === "weekly";
     rows.push([...(weekly ? ["Тиждень"] : []), "Дата", "Пост", "Початок", "Кінець", "Зміна", "Черговий", "Підрозділ", "Телефон"]);
-    const weeks = weekly ? calendarWeeks() : [Array.from({ length: state.daysCount }, (_, day) => day)];
+    const weeks = weekly ? calendarWeeks() : [state.reportType === "daily" ? [state.reportDay] : Array.from({ length: state.daysCount }, (_, day) => day)];
     weeks.forEach((days, index) => {
       if (weekly) rows.push([`Тиждень ${index + 1}: ${dateAt(days[0]).toLocaleDateString("uk-UA")} — ${dateAt(days[days.length - 1]).toLocaleDateString("uk-UA")}`]);
       state.schedule.rows.forEach((row) => {
@@ -2253,7 +2271,7 @@
       ["xl/worksheets/sheet1.xml", xlsxSheet(rows)],
     ];
     const blob = makeXlsx(entries);
-    const filename = `${weekly ? "potyzhnevyi-zvit" : "grafik-cherguvan"}-${state.startDate}.xlsx`;
+    const filename = `${weekly ? "zvit-po-7-dniv" : "grafik-cherguvan"}-${state.reportType === "daily" ? dateInputValueAt(state.reportDay) : state.startDate}.xlsx`;
 
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -2890,10 +2908,20 @@
 
   $("#buildBtn").onclick = build;
   $("#reportType").addEventListener("change", (event) => {
-    state.reportType = event.target.value === "weekly" ? "weekly" : "full";
+    state.reportType = ["weekly", "daily"].includes(event.target.value) ? event.target.value : "full";
     save();
     if (state.schedule) renderSchedule();
   });
+  $("#previousReportDay").onclick = () => {
+    state.reportDay = Math.max(0, state.reportDay - 1);
+    save();
+    renderSchedule();
+  };
+  $("#nextReportDay").onclick = () => {
+    state.reportDay = Math.min(state.daysCount - 1, state.reportDay + 1);
+    save();
+    renderSchedule();
+  };
   $("#csvBtn").onclick = excel;
   $("#pdfBtn").onclick = exportPdf;
   $("#printBtn").onclick = printSchedule;
